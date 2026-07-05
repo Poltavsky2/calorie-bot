@@ -1,0 +1,71 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Connection test document
+    // We allow anyone to read this to verify connection status
+    match /test/connection {
+      allow get: if true;
+    }
+
+    // Global Helpers
+    function isValidId(id) {
+      return id is string && id.size() == 10 && id.matches('^[A-Z2-9]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity Validations
+    function isValidUser(data) {
+      // Basic profile validation
+      // We allow appData to be the primary payload if needed
+      return (
+        // Case 1: Full profile creation
+        (data.keys().hasAll(['name', 'createdAt', 'lastLoginAt']) &&
+         data.name is string && data.name.size() > 0 &&
+         data.createdAt == request.time &&
+         data.lastLoginAt == request.time) ||
+        // Case 2: Save data creation (appData centric)
+        (data.keys().hasAll(['appData', 'lastLoginAt']) &&
+         data.appData is map)
+      );
+    }
+
+    // Collection: Users
+    match /users/{userId} {
+      // Key-based security: Knowledge of the 10-char ID grants access
+      
+      allow get: if isValidId(userId);
+      allow list: if false; // Security against key enumeration
+
+      allow create: if isValidId(userId) && isValidUser(incoming());
+
+      allow update: if isValidId(userId) && (
+        // Allow updates to name, appData and lastLoginAt
+        // We keep createdAt immutable if it exists
+        (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt) &&
+        incoming().lastLoginAt == request.time &&
+        ( !('name' in incoming()) || (incoming().name is string && incoming().name.size() <= 100) ) &&
+        ( !('appData' in incoming()) || incoming().appData is map )
+      );
+
+      match /diet/{entryId} {
+        allow read, write: if isValidId(userId);
+      }
+      
+      match /products/{productId} {
+        allow read, write: if isValidId(userId);
+      }
+    }
+  }
+}

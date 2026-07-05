@@ -1,0 +1,6 @@
+{
+  "name": "Bioprizma",
+  "description": "AI-powered Telegram Mini App for product composition analysis and diet tracking.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["AI analysis", "Product scanning", "Diet tracking", "Excel export/import"]
+}

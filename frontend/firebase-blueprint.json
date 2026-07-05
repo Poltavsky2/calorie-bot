@@ -1,0 +1,61 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with gamification stats and application data",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "xp": { "type": "integer" },
+        "level": { "type": "integer" },
+        "streak": { "type": "integer" },
+        "lastActive": { "type": "integer" },
+        "appData": {
+          "type": "object",
+          "description": "Full backup of products and diet entries"
+        },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "createdAt", "lastLoginAt"]
+    },
+    "DietEntry": {
+      "title": "Diet Entry",
+      "description": "Log of consumed food or drink or activity",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "mealType": { "type": "string" },
+        "grams": { "type": "number" },
+        "calories": { "type": "number" },
+        "health_score": { "type": "integer" },
+        "timestamp": { "type": "integer" }
+      }
+    },
+    "Product": {
+      "title": "Product",
+      "description": "Scanned or manual food product",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "health_score": { "type": "integer" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Storage for user profiles. Main document stores base info and settings."
+    },
+    "/users/{userId}/diet/{entryId}": {
+      "schema": "DietEntry",
+      "description": "Individual diet history entries"
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": "Product",
+      "description": "Customized/added products"
+    }
+  }
+}
