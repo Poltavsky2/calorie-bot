@@ -100,18 +100,21 @@ CATEGORY_EMOJIS = {
 
 SYSTEM_PARSING_PROMPT = """You are a financial parser assistant.
 Extract transaction details from user message (text, voice transcript, or image).
-You must output a JSON object containing:
+You must output a JSON object containing a "transactions" key with a LIST of transaction objects.
+If the user mentions multiple distinct spending items (e.g., "такси 300, пельмени 200, кино 500"), you MUST create a separate transaction object for EACH item in the list.
+
+Each transaction object in the "transactions" list must contain:
 - amount: float (positive number)
 - type: "expense" or "income"
-- category: string (the category of the transaction. You must try to match it to one of the user's categories, or suggest a new logical category if no match is found)
-- description: string (a short comment or item description in Russian, e.g. "кофе", "зарплата". If the user mentions multiple items with their prices, e.g., "купил пельмени за 200 и доширак за 100", you MUST sum all prices into the "amount" field (e.g. 300) and format the "description" field as a detailed list of all items with their prices, e.g. "пельмени: 200 руб, доширак: 100 руб", so that the user knows exactly how much was spent on each item.)
+- category: string (try to match to user's categories or suggest a logical one)
+- description: string (short comment, e.g., "такси", "пельмени", "билет в кино")
 - confidence: float (between 0.0 and 1.0)
 
 User's categories:
 Expenses: {expense_categories}
 Income: {income_categories}
 
-Return ONLY raw JSON with these keys: "amount", "type", "category", "description", "confidence"."""
+Return ONLY raw JSON with the "transactions" key."""
 
 # ----------------- EMOJI HELPER -----------------
 
@@ -239,11 +242,13 @@ def get_fallback_parse(text: str, categories: list) -> dict:
     description = text[:100]
     
     return {
-        "amount": amount,
-        "type": tx_type,
-        "category": detected_category,
-        "description": description,
-        "confidence": 0.5
+        "transactions": [{
+            "amount": amount,
+            "type": tx_type,
+            "category": detected_category,
+            "description": description,
+            "confidence": 0.5
+        }]
     }
 
 async def call_ai_api(prompt: str, api_key: str, system_instruction: str = None, mime_type: str = None, file_bytes: bytes = None, response_json: bool = False) -> str:
@@ -373,8 +378,16 @@ async def menu_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_main_menu(update.effective_message or update.message)
 
 async def cancel_state_inline(query, context):
-    context.user_data.clear()
-    await send_main_menu(query.message, edit_query=query)
+    queue = context.user_data.get("pending_tx_queue", [])
+    if queue:
+        next_tx = queue.pop(0)
+        context.user_data["pending_tx_queue"] = queue
+        context.user_data["pending_tx"] = next_tx
+        context.user_data["pending_tx_current"] = context.user_data.get("pending_tx_current", 1) + 1
+        await show_pending_tx_confirmation(query.message, context)
+    else:
+        context.user_data.clear()
+        await send_main_menu(query.message, edit_query=query)
 
 # ----------------- MESSAGE ROUTING -----------------
 
@@ -726,16 +739,36 @@ async def process_transaction_input(message, context, input_text=None, file_byte
             parsed = get_fallback_parse(input_text, categories)
         else:
             parsed = {
-                "amount": 0.0,
-                "type": "expense",
-                "category": "Другое",
-                "description": "Голосовое/фото сообщение (AI не активен)",
-                "confidence": 0.0
+                "transactions": [{
+                    "amount": 0.0,
+                    "type": "expense",
+                    "category": "Другое",
+                    "description": "Голосовое/фото сообщение (AI не активен)",
+                    "confidence": 0.0
+                }]
             }
             
-    parsed["date"] = datetime.now().strftime("%Y-%m-%d")
-    
-    context.user_data["pending_tx"] = parsed
+    if "transactions" in parsed and isinstance(parsed["transactions"], list):
+        tx_list = parsed["transactions"]
+    else:
+        tx_list = [parsed]
+        
+    if not tx_list:
+        tx_list = [{
+            "amount": 0.0,
+            "type": "expense",
+            "category": "Другое",
+            "description": "Ошибка парсинга",
+            "confidence": 0.0
+        }]
+        
+    for t in tx_list:
+        t["date"] = datetime.now().strftime("%Y-%m-%d")
+        
+    context.user_data["pending_tx_queue"] = tx_list[1:]
+    context.user_data["pending_tx_total"] = len(tx_list)
+    context.user_data["pending_tx_current"] = 1
+    context.user_data["pending_tx"] = tx_list[0]
     context.user_data["bot_state"] = None
     
     try:
@@ -768,8 +801,15 @@ async def show_pending_tx_confirmation(message, context, prefix=""):
     escaped_category = html.escape(pending['category'])
     escaped_desc = html.escape(desc)
     
+    total = context.user_data.get("pending_tx_total", 1)
+    current = context.user_data.get("pending_tx_current", 1)
+    
+    header = f"{prefix}🔍 <b>Проверьте операцию перед сохранением:</b>"
+    if total > 1:
+        header = f"{prefix}🔍 <b>Операция {current} из {total} перед сохранением:</b>"
+        
     text = (
-        f"{prefix}🔍 <b>Проверьте операцию перед сохранением:</b>\n\n"
+        f"{header}\n\n"
         f"💵 <b>Сумма:</b> {format_amount(pending['amount'], currency)}\n"
         f"🏷 <b>Категория:</b> {t_emoji} {escaped_category} ({type_label})\n"
         f"📝 <b>Описание:</b> {escaped_desc}\n"
@@ -901,7 +941,6 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         user_data["transactions"] = transactions
         
         save_user_data_by_id(user_id, user_data)
-        context.user_data.clear()
         
         currency = user_data.get("settings", {}).get("currency", "RUB")
         t_emoji = get_category_emoji(pending["category"], pending["type"])
@@ -913,8 +952,20 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if not cat_exists:
             added_text += f"🏷 <i>Новая категория '{escaped_cat_name}' добавлена автоматически.</i>"
             
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="menu_main")]])
-        await query.edit_message_text(added_text, reply_markup=keyboard, parse_mode="HTML")
+        queue = context.user_data.get("pending_tx_queue", [])
+        if queue:
+            keyboard = InlineKeyboardMarkup([])
+            await query.edit_message_text(added_text, reply_markup=keyboard, parse_mode="HTML")
+            
+            next_tx = queue.pop(0)
+            context.user_data["pending_tx_queue"] = queue
+            context.user_data["pending_tx"] = next_tx
+            context.user_data["pending_tx_current"] = context.user_data.get("pending_tx_current", 1) + 1
+            await show_pending_tx_confirmation(query.message, context)
+        else:
+            context.user_data.clear()
+            keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("◀️ Главное меню", callback_data="menu_main")]])
+            await query.edit_message_text(added_text, reply_markup=keyboard, parse_mode="HTML")
         
     elif data == "tx_cancel":
         await cancel_state_inline(query, context)
