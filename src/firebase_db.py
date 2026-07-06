@@ -6,7 +6,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_FIREBASE_URL = "https://finai-premium-default-rtdb.europe-west1.firebasedatabase.app/"
+DUMMY_FIREBASE_URL = "https://finai-premium-default-rtdb.europe-west1.firebasedatabase.app/"
+ENV_FIREBASE_URL = os.environ.get("FIREBASE_URL")
 
 if os.environ.get("VERCEL"):
     DB_PATH = "/tmp/finance.db"
@@ -49,7 +50,7 @@ DEFAULT_CATEGORIES = [
 
 def clean_url(url: str) -> str:
     if not url:
-        url = DEFAULT_FIREBASE_URL
+        url = ENV_FIREBASE_URL or DUMMY_FIREBASE_URL
     url = url.strip()
     if not url.endswith("/"):
         url += "/"
@@ -57,7 +58,7 @@ def clean_url(url: str) -> str:
 
 def get_user_data(user_key: str, firebase_url: str = None) -> dict:
     url = clean_url(firebase_url)
-    is_default = (url == clean_url(DEFAULT_FIREBASE_URL))
+    is_default = (url == clean_url(DUMMY_FIREBASE_URL))
     
     if not is_default:
         user_url = f"{url}users/{user_key}.json"
@@ -87,7 +88,7 @@ def get_user_data(user_key: str, firebase_url: str = None) -> dict:
 
 def save_user_data(user_key: str, data: dict, firebase_url: str = None):
     url = clean_url(firebase_url)
-    is_default = (url == clean_url(DEFAULT_FIREBASE_URL))
+    is_default = (url == clean_url(DUMMY_FIREBASE_URL))
     
     saved_remote = False
     if not is_default:
