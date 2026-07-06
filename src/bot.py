@@ -1659,9 +1659,9 @@ def format_ai_response(response_text: str) -> str:
                     return [format_val(item) for item in val]
                 elif isinstance(val, str):
                     escaped = escape_html(val)
-                    escaped = re.sub(r'\\*\\*(.*?)\\*\\*', r'<b>\\1</b>', escaped)
-                    escaped = re.sub(r'\\*(.*?)\\*', r'<i>\\1</i>', escaped)
-                    escaped = re.sub(r'`(.*?)`', r'<code>\\1</code>', escaped)
+                    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+                    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+                    escaped = re.sub(r'`(.*?)`', r'<code>\1</code>', escaped)
                     escaped = escaped.replace('\\n', '\n')
                     return escaped
                 elif isinstance(val, dict):
@@ -1728,9 +1728,9 @@ def format_ai_response(response_text: str) -> str:
         logger.error(f"Error parsing AI JSON response: {e}")
         
     escaped = escape_html(response_text)
-    escaped = re.sub(r'\\*\\*(.*?)\\*\\*', r'<b>\\1</b>', escaped)
-    escaped = re.sub(r'\\*(.*?)\\*', r'<i>\\1</i>', escaped)
-    escaped = re.sub(r'`(.*?)`', r'<code>\\1</code>', escaped)
+    escaped = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', escaped)
+    escaped = re.sub(r'\*(.*?)\*', r'<i>\1</i>', escaped)
+    escaped = re.sub(r'`(.*?)`', r'<code>\1</code>', escaped)
     return escaped
 
 # ----------------- AI ANALYSIS FLOW -----------------
