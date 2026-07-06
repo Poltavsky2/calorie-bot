@@ -8,8 +8,17 @@ import re
 import io
 import sqlite3
 import threading
+import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
+
+# --- FIX FOR HUGGING FACE IPV6 TIMEOUTS ---
+old_getaddrinfo = socket.getaddrinfo
+def new_getaddrinfo(*args, **kwargs):
+    responses = old_getaddrinfo(*args, **kwargs)
+    return [response for response in responses if response[0] == socket.AF_INET]
+socket.getaddrinfo = new_getaddrinfo
+# ------------------------------------------
 
 import httpx
 from telegram import (
@@ -1198,8 +1207,16 @@ def main():
         logger.error("CALORIE_BOT_TOKEN or TELEGRAM_BOT_TOKEN is missing from .env.")
         sys.exit(1)
         
-    # Build application
-    application = Application.builder().token(token).build()
+    # Build application with increased timeouts for HF
+    application = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(30.0)
+        .build()
+    )
     
     # Handlers
     application.add_handler(CommandHandler("start", start_command))
