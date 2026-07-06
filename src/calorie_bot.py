@@ -690,6 +690,42 @@ async def prompt_add_log(query, context):
     ]
     await query.edit_message_text(prompt_text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
 
+async def show_history(query, context):
+    user_id = query.from_user.id
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT timestamp, meal_type, food_name, calories, protein, fat, carbs 
+        FROM diet_entries 
+        WHERE user_id = ? 
+        ORDER BY timestamp DESC 
+        LIMIT 10
+    """, (user_id,))
+    rows = cursor.fetchall()
+    conn.close()
+
+    if not rows:
+        text = "🤷‍♂️ <b>У вас пока нет записей о приемах пищи.</b>\nДобавьте что-нибудь, чтобы увидеть историю!"
+    else:
+        text = "📜 <b>Ваши последние 10 записей:</b>\n\n"
+        for row in rows:
+            ts, meal_type, food_name, cals, prot, fat, carbs = row
+            dt_str = datetime.fromtimestamp(ts).strftime("%d.%m %H:%M")
+            meal_emoji = "🍽"
+            if meal_type == "Завтрак": meal_emoji = "🍳"
+            elif meal_type == "Обед": meal_emoji = "🍲"
+            elif meal_type == "Ужин": meal_emoji = "🍝"
+            elif meal_type == "Перекус": meal_emoji = "🥪"
+            
+            text += f"🗓 <b>{dt_str}</b> | {meal_emoji} {meal_type}\n"
+            text += f"🥑 <i>{food_name}</i>\n"
+            if cals is not None and cals > 0:
+                text += f"🔥 <b>{cals:.0f} ккал</b> (Б:{prot:.0f} Ж:{fat:.0f} У:{carbs:.0f})\n"
+            text += "\n"
+
+    keyboard = [[InlineKeyboardButton("⬅️ Назад в меню", callback_data="menu_main")]]
+    await query.edit_message_text(text, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
 async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
