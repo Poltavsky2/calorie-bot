@@ -12,6 +12,14 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
 
+def safe_fromtimestamp(ts):
+    if not isinstance(ts, (int, float)):
+        ts = 0
+    if ts > 10000000000:
+        ts = ts / 1000
+    return safe_fromtimestamp(ts)
+
+
 # --- FIX FOR HUGGING FACE IPV6 TIMEOUTS ---
 old_getaddrinfo = socket.getaddrinfo
 def new_getaddrinfo(*args, **kwargs):
@@ -562,7 +570,7 @@ async def show_history(query, context):
             fat = row.get("fat", 0)
             carbs = row.get("carbs", 0)
             
-            dt_str = datetime.fromtimestamp(ts).strftime("%d.%m %H:%M")
+            dt_str = safe_fromtimestamp(ts).strftime("%d.%m %H:%M")
             meal_emoji = "🍽"
             if meal_type == "breakfast": meal_emoji = "🍳"
             elif meal_type == "lunch": meal_emoji = "🍲"
@@ -881,7 +889,7 @@ async def save_and_confirm_entry(query_or_message, context, from_text_reply=Fals
         "snack": "🍎 Перекус"
     }
     meal_name_rus = meal_names.get(flow['meal_type'], flow['meal_type'])
-    time_str = datetime.fromtimestamp(flow['timestamp']).strftime('%H:%M')
+    time_str = safe_fromtimestamp(flow['timestamp']).strftime('%H:%M')
     
     # Save to SQLite DB
     await save_diet_entry(
@@ -1210,7 +1218,7 @@ async def generate_report(query, context, period_action):
     total_water = 0
     total_steps = 0
     for e in entries:
-        dt = datetime.fromtimestamp(e.get('timestamp', 0)).strftime("%Y-%m-%d %H:%M")
+        dt = safe_fromtimestamp(e.get('timestamp', 0)).strftime("%Y-%m-%d %H:%M")
         if e.get("type") == "water" or e.get("water_ml", 0) > 0:
             data_lines.append(f"{dt} | Вода: {e.get('water_ml', 0)} мл")
             total_water += e.get("water_ml", 0)
