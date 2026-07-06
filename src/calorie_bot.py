@@ -1111,65 +1111,6 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
 
 # ----------------- MAIN INITIALIZATION -----------------
 
-def main():
-    token = os.environ.get("CALORIE_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
-    if not token or token in ["YOUR_TELEGRAM_BOT_TOKEN_HERE", "YOUR_CALORIE_BOT_TOKEN_HERE"]:
-        logger.error("CALORIE_BOT_TOKEN or TELEGRAM_BOT_TOKEN is missing from .env.")
-        sys.exit(1)
-        
-    # Build application with increased timeouts for HF
-    application = (
-        Application.builder()
-        .token(token)
-        .connect_timeout(30.0)
-        .read_timeout(30.0)
-        .write_timeout(30.0)
-        .pool_timeout(30.0)
-        .build()
-    )
-    
-    # Handlers
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", start_command))
-    application.add_handler(CommandHandler("cancel", cancel_command))
-    application.add_handler(CommandHandler("settings", settings_command))
-    
-    application.add_handler(CallbackQueryHandler(callback_handler))
-    
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_text_handler))
-    application.add_handler(MessageHandler(filters.PHOTO | filters.VOICE, user_media_handler))
-    
-    # --- Dummy HTTP Server for Render.com ---
-    class DummyHandler(BaseHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.send_header('Content-type','text/plain')
-            self.end_headers()
-            self.wfile.write(b"Bot is running!")
-            
-        def do_HEAD(self):
-            self.send_response(200)
-            self.send_header('Content-type','text/plain')
-            self.end_headers()
-
-    def run_dummy_server():
-        port = int(os.environ.get("PORT", 10000))
-        server = HTTPServer(('0.0.0.0', port), DummyHandler)
-        server.serve_forever()
-
-    server_thread = threading.Thread(target=run_dummy_server)
-    server_thread.daemon = True
-    server_thread.start()
-    # ----------------------------------------
-    
-    # Start bot
-    logger.info("Starting Calorie Diary Bot...")
-    application.run_polling()
-
-if __name__ == "__main__":
-    main()
-
-
 async def show_reports_menu(query, context):
     text = "📊 <b>Отчеты от ИИ</b>\n\nВыберите период, за который вы хотите получить подробный аналитический отчет:"
     keyboard = [
@@ -1254,3 +1195,64 @@ async def generate_report(query, context, period_action):
         
     keyboard = [[InlineKeyboardButton("🔙 Назад", callback_data="menu_reports")]]
     await query.edit_message_text(report_text, parse_mode="Markdown", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+def main():
+    token = os.environ.get("CALORIE_BOT_TOKEN") or os.environ.get("TELEGRAM_BOT_TOKEN")
+    if not token or token in ["YOUR_TELEGRAM_BOT_TOKEN_HERE", "YOUR_CALORIE_BOT_TOKEN_HERE"]:
+        logger.error("CALORIE_BOT_TOKEN or TELEGRAM_BOT_TOKEN is missing from .env.")
+        sys.exit(1)
+        
+    # Build application with increased timeouts for HF
+    application = (
+        Application.builder()
+        .token(token)
+        .connect_timeout(30.0)
+        .read_timeout(30.0)
+        .write_timeout(30.0)
+        .pool_timeout(30.0)
+        .build()
+    )
+    
+    # Handlers
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", start_command))
+    application.add_handler(CommandHandler("cancel", cancel_command))
+    application.add_handler(CommandHandler("settings", settings_command))
+    
+    application.add_handler(CallbackQueryHandler(callback_handler))
+    
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, user_text_handler))
+    application.add_handler(MessageHandler(filters.PHOTO | filters.VOICE, user_media_handler))
+    
+    # --- Dummy HTTP Server for Render.com ---
+    class DummyHandler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header('Content-type','text/plain')
+            self.end_headers()
+            self.wfile.write(b"Bot is running!")
+            
+        def do_HEAD(self):
+            self.send_response(200)
+            self.send_header('Content-type','text/plain')
+            self.end_headers()
+
+    def run_dummy_server():
+        port = int(os.environ.get("PORT", 10000))
+        server = HTTPServer(('0.0.0.0', port), DummyHandler)
+        server.serve_forever()
+
+    server_thread = threading.Thread(target=run_dummy_server)
+    server_thread.daemon = True
+    server_thread.start()
+    # ----------------------------------------
+    
+    # Start bot
+    logger.info("Starting Calorie Diary Bot...")
+    application.run_polling()
+
+if __name__ == "__main__":
+    main()
+
+
