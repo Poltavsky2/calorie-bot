@@ -6,7 +6,7 @@ import asyncio
 import base64
 import re
 import io
-import sqlite3
+from firebase_client import save_diet_entry_firebase, get_diet_entries_firebase, get_user_settings_firebase, save_user_settings_firebase
 import threading
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -40,247 +40,35 @@ logger = logging.getLogger(__name__)
 # Load env variables
 load_dotenv(override=True)
 
-DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "calorie_diary.db")
-
 # ----------------- DB SETUP -----------------
 
-def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # User settings table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS user_settings (
-        user_id INTEGER PRIMARY KEY,
-        api_key TEXT,
-        api_provider TEXT DEFAULT 'gemini'
-    )
-    """)
-    
-    # Diet entries table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS diet_entries (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_id INTEGER,
-        meal_type TEXT,
-        timestamp INTEGER,
-        food_name TEXT,
-        utility TEXT,
-        description TEXT,
-        calories REAL,
-        protein REAL,
-        fat REAL,
-        carbs REAL,
-        grams REAL,
-        ingredients_json TEXT,
-        health_score INTEGER,
-        warning_type TEXT,
-        water_ml INTEGER DEFAULT 0,
-        steps_count INTEGER DEFAULT 0
-    )
-    """)
-    
-    # Add migration columns if they don't exist
-    try:
-        cursor.execute("ALTER TABLE diet_entries ADD COLUMN health_score INTEGER")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE diet_entries ADD COLUMN warning_type TEXT")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE diet_entries ADD COLUMN water_ml INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-    try:
-        cursor.execute("ALTER TABLE diet_entries ADD COLUMN steps_count INTEGER DEFAULT 0")
-    except sqlite3.OperationalError:
-        pass
-        
-    conn.commit()
-    conn.close()
+async def get_user_settings(user_id: int) -> dict:
+    return await get_user_settings_firebase(user_id)
 
-def get_user_settings(user_id: int) -> dict:
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("SELECT api_key, api_provider FROM user_settings WHERE user_id = ?", (user_id,))
-    row = cursor.fetchone()
-    conn.close()
-    if row:
-        return {"api_key": row[0], "api_provider": row[1]}
-    return None
+async def set_user_api_key(user_id: int, api_key: str, provider: str = 'gemini'):
+    await save_user_settings_firebase(user_id, {"api_key": api_key, "api_provider": provider})
 
-def set_user_api_key(user_id: int, api_key: str, provider: str = 'gemini'):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT OR REPLACE INTO user_settings (user_id, api_key, api_provider)
-    VALUES (?, ?, ?)
-    """, (user_id, api_key, provider))
-    conn.commit()
-    conn.close()
-
-def clear_user_api_key(user_id: int):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_settings WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-
-def encode_telegram_id(tg_id: int) -> str:
-    chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
-    num = tg_id
-    code = ''
-    while num > 0:
-        code = chars[num % 32] + code
-        num = num // 32
-    return code.rjust(10, 'A')
-
-def to_firestore_value(val):
-    if isinstance(val, str):
-        return {"stringValue": val}
-    elif isinstance(val, bool):
-        return {"booleanValue": val}
-    elif isinstance(val, int):
-        return {"integerValue": str(val)}
-    elif isinstance(val, float):
-        return {"doubleValue": val}
-    elif isinstance(val, list):
-        return {"arrayValue": {"values": [to_firestore_value(x) for x in val]}}
-    elif isinstance(val, dict):
-        return {"mapValue": {"fields": {k: to_firestore_value(v) for k, v in val.items()}}}
-    elif val is None:
-        return {"nullValue": None}
-    else:
-        return {"stringValue": str(val)}
-
-_ensured_profiles: set = set()
-
-def ensure_user_profile(user_id: int, first_name: str = "Telegram User"):
-    """Ensure a user profile document exists in Firestore for this Telegram user."""
-    firestore_user_id = encode_telegram_id(user_id)
-    if firestore_user_id in _ensured_profiles:
-        return  # Already ensured this session
-    
-    project_id = os.environ.get("FIRESTORE_PROJECT_ID", "gen-lang-client-0531427038")
-    database_id = os.environ.get("FIRESTORE_DATABASE_ID", "ai-studio-bioprizma-4507c715-35b3-4388-9a86-c14535f1207b")
-    api_key = os.environ.get("FIRESTORE_API_KEY", "AIzaSyCPfRCkJzO5Q3EZSxL0f2Q67yMEFqasfhQ")
-    
-    # Check if profile already exists
-    check_url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/users/{firestore_user_id}?key={api_key}"
-    try:
-        resp = httpx.get(check_url, timeout=10.0)
-        if resp.status_code == 200:
-            _ensured_profiles.add(firestore_user_id)
-            return  # Profile already exists
-    except Exception:
-        pass  # Continue to create
-    
-    # Create profile using Firestore REST API (PATCH = upsert)
-    import time as _time
-    now_ms = int(_time.time() * 1000)
-    data = {
-        "appData": {
-            "user": {
-                "name": first_name,
-                "xp": 0,
-                "level": 1,
-                "streak": 0,
-                "lastActive": now_ms,
-                "registeredAt": now_ms
-            }
-        },
-        "lastLoginAt": now_ms
-    }
-    payload = {"fields": {k: to_firestore_value(v) for k, v in data.items()}}
-    
-    try:
-        resp = httpx.patch(check_url, json=payload, timeout=10.0)
-        if resp.status_code == 200:
-            logger.info(f"Created Firestore profile for user {firestore_user_id}")
-            _ensured_profiles.add(firestore_user_id)
-        else:
-            logger.warning(f"Could not create Firestore profile: {resp.status_code} - {resp.text}")
-    except Exception as e:
-        logger.error(f"Error creating Firestore profile: {e}")
-
-def sync_to_firestore(user_id: int, entry_id: str, meal_type: str, timestamp: int, food_name: str, 
-                      utility: str, description: str, calories: float, protein: float, 
-                      fat: float, carbs: float, grams: float, ingredients_json: str,
-                      health_score: int, warning_type: str, water_ml: int = 0, steps_count: int = 0,
-                      first_name: str = "Telegram User"):
-    # Ensure user profile exists before syncing diet entry
-    ensure_user_profile(user_id, first_name)
-    
-    project_id = os.environ.get("FIRESTORE_PROJECT_ID", "gen-lang-client-0531427038")
-    database_id = os.environ.get("FIRESTORE_DATABASE_ID", "ai-studio-bioprizma-4507c715-35b3-4388-9a86-c14535f1207b")
-    api_key = os.environ.get("FIRESTORE_API_KEY", "AIzaSyCPfRCkJzO5Q3EZSxL0f2Q67yMEFqasfhQ")
-    
-    firestore_user_id = encode_telegram_id(user_id)
-    url = f"https://firestore.googleapis.com/v1/projects/{project_id}/databases/{database_id}/documents/users/{firestore_user_id}/diet/{entry_id}?key={api_key}"
-    
-    data = {
-        "id": entry_id,
-        "mealType": meal_type,
-        "grams": float(grams),
-        "calories": float(calories),
-        "health_score": int(health_score) if health_score is not None else 100,
-        "warningType": warning_type or "none",
-        "protein": float(protein),
-        "fat": float(fat),
-        "carbs": float(carbs),
-        "timestamp": int(timestamp * 1000), # JS milliseconds
-        "description": description or ""
-    }
-    
-    if meal_type not in ["water", "steps"] and food_name:
-        data["items"] = [
-            {
-                "productId": "bot-entry",
-                "productName": food_name,
-                "grams": float(grams),
-                "calories": float(calories),
-                "health_score": int(health_score) if health_score is not None else 100,
-                "protein": float(protein),
-                "fat": float(fat),
-                "carbs": float(carbs)
-            }
-        ]
-    
-    if water_ml > 0:
-        data["water_ml"] = int(water_ml)
-    if steps_count > 0:
-        data["steps_count"] = int(steps_count)
-        
-    payload = {
-        "fields": {k: to_firestore_value(v) for k, v in data.items()}
-    }
-    
-    try:
-        resp = httpx.patch(url, json=payload, timeout=10.0)
-        if resp.status_code != 200:
-            logger.error(f"Failed to sync to Firestore: {resp.status_code} - {resp.text}")
-        else:
-            logger.info(f"Successfully synced entry {entry_id} to Firestore for user {firestore_user_id}")
-    except Exception as e:
-        logger.error(f"Error syncing to Firestore: {e}")
-
-def save_diet_entry(user_id: int, meal_type: str, timestamp: int, food_name: str, 
+async def save_diet_entry(user_id: int, meal_type: str, timestamp: int, food_name: str, 
                     utility: str, description: str, calories: float, protein: float, 
-                    fat: float, carbs: float, grams: float, ingredients_json: str,
+                    fat: float, carbs: float, grams: float, ingredients_json: str, 
                     health_score: int, warning_type: str, water_ml: int = 0, steps_count: int = 0):
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-    INSERT INTO diet_entries (user_id, meal_type, timestamp, food_name, utility, 
-                             description, calories, protein, fat, carbs, grams, 
-                             ingredients_json, health_score, warning_type, water_ml, steps_count)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (user_id, meal_type, timestamp, food_name, utility, description, calories, protein, fat, carbs, grams, ingredients_json, health_score, warning_type, water_ml, steps_count))
-    row_id = cursor.lastrowid
-    conn.commit()
-    conn.close()
+    entry_data = {
+        "meal_type": meal_type,
+        "timestamp": timestamp,
+        "food_name": food_name,
+        "description": description,
+        "calories": calories,
+        "protein": protein,
+        "fat": fat,
+        "carbs": carbs,
+        "grams": grams,
+        "ingredients_json": ingredients_json,
+        "health_score": health_score,
+        "warningType": warning_type,
+        "water_ml": water_ml,
+        "steps_count": steps_count
+    }
+    await save_diet_entry_firebase(user_id, entry_data)
     
     entry_id = f"tg_entry_{row_id}"
     sync_to_firestore(
@@ -304,7 +92,7 @@ def save_diet_entry(user_id: int, meal_type: str, timestamp: int, food_name: str
     )
 
 # Initialize DB on import/run
-init_db()
+
 
 # ----------------- SYSTEM PROMPT -----------------
 
@@ -638,7 +426,7 @@ async def settings_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def show_settings(query_or_message, context, from_callback=True):
     user_id = query_or_message.from_user.id if from_callback else query_or_message.effective_user.id
-    settings = get_user_settings(user_id)
+    settings = await get_user_settings(user_id)
     
     # Check fallback/env keys
     has_system_gemini = bool(os.environ.get("GEMINI_API_KEY") and os.environ.get("GEMINI_API_KEY") != "YOUR_GEMINI_API_KEY_HERE")
@@ -692,30 +480,29 @@ async def prompt_add_log(query, context):
 
 async def show_history(query, context):
     user_id = query.from_user.id
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT timestamp, meal_type, food_name, calories, protein, fat, carbs 
-        FROM diet_entries 
-        WHERE user_id = ? 
-        ORDER BY timestamp DESC 
-        LIMIT 10
-    """, (user_id,))
-    rows = cursor.fetchall()
-    conn.close()
+    rows = await get_diet_entries_firebase(user_id, limit=10)
 
     if not rows:
         text = "🤷‍♂️ <b>У вас пока нет записей о приемах пищи.</b>\nДобавьте что-нибудь, чтобы увидеть историю!"
     else:
         text = "📜 <b>Ваши последние 10 записей:</b>\n\n"
         for row in rows:
-            ts, meal_type, food_name, cals, prot, fat, carbs = row
+            ts = row.get("timestamp", 0)
+            meal_type = row.get("mealType", "snack")
+            food_name = row.get("food_name", "Еда")
+            cals = row.get("calories", 0)
+            prot = row.get("protein", 0)
+            fat = row.get("fat", 0)
+            carbs = row.get("carbs", 0)
+            
             dt_str = datetime.fromtimestamp(ts).strftime("%d.%m %H:%M")
             meal_emoji = "🍽"
-            if meal_type == "Завтрак": meal_emoji = "🍳"
-            elif meal_type == "Обед": meal_emoji = "🍲"
-            elif meal_type == "Ужин": meal_emoji = "🍝"
-            elif meal_type == "Перекус": meal_emoji = "🥪"
+            if meal_type == "breakfast": meal_emoji = "🍳"
+            elif meal_type == "lunch": meal_emoji = "🍲"
+            elif meal_type == "dinner": meal_emoji = "🍝"
+            elif meal_type == "snack": meal_emoji = "🥪"
+            elif meal_type == "water": meal_emoji = "💧"
+            elif meal_type == "steps": meal_emoji = "👟"
             
             text += f"🗓 <b>{dt_str}</b> | {meal_emoji} {meal_type}\n"
             text += f"🥑 <i>{food_name}</i>\n"
@@ -794,7 +581,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if input_type == "water":
             water_ml = last_analysis["water_ml"]
-            save_diet_entry(
+            await save_diet_entry(
                 user_id=user_id,
                 meal_type="water",
                 timestamp=int(datetime.now().timestamp()),
@@ -829,7 +616,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         elif input_type == "steps":
             steps_count = last_analysis["steps_count"]
-            save_diet_entry(
+            await save_diet_entry(
                 user_id=user_id,
                 meal_type="steps",
                 timestamp=int(datetime.now().timestamp()),
@@ -1024,7 +811,7 @@ async def save_and_confirm_entry(query_or_message, context, from_text_reply=Fals
     time_str = datetime.fromtimestamp(flow['timestamp']).strftime('%H:%M')
     
     # Save to SQLite DB
-    save_diet_entry(
+    await save_diet_entry(
         user_id=user_id,
         meal_type=flow['meal_type'],
         timestamp=flow['timestamp'],
@@ -1173,7 +960,7 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
     user_id = update.effective_user.id
     
     # Retrieve user settings
-    settings = get_user_settings(user_id)
+    settings = await get_user_settings(user_id)
     api_key = settings.get("api_key") if settings else None
     provider = settings.get("api_provider", "gemini") if settings else "gemini"
     
