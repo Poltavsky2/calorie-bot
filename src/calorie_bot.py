@@ -483,7 +483,9 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
         }
     }
     
-    async with httpx.AsyncClient() as client:
+    proxy_url = os.environ.get("GEMINI_PROXY")
+    
+    async with httpx.AsyncClient(proxy=proxy_url) as client:
         resp = await client.post(url, json=payload, timeout=45.0)
         if resp.status_code != 200:
             raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
