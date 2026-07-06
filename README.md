@@ -1,3 +1,13 @@
+---
+title: Calorie Bot
+emoji: 🤖
+colorFrom: blue
+colorTo: green
+sdk: docker
+pinned: false
+app_port: 7860
+---
+
 # Calorie Bot & Web App
 
 This repository contains the backend and frontend code for the Calorie Tracking Telegram Bot and Web Application.
