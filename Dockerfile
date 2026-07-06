@@ -1,17 +1,21 @@
 FROM python:3.11-slim
 
-WORKDIR /app
+# Создаем пользователя с ID 1000 (требование Hugging Face Spaces)
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
-# Копируем файл зависимостей и устанавливаем их
-COPY requirements.txt .
+WORKDIR $HOME/app
+
+# Копируем и устанавливаем зависимости
+COPY --chown=user requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем исходный код бота
-COPY src/ ./src/
+# Копируем код
+COPY --chown=user src/ ./src/
 
-# Указываем порт 7860 (Hugging Face Spaces требует, чтобы сервер слушал именно этот порт)
 EXPOSE 7860
 ENV PORT=7860
 
-# Запускаем бота
 CMD ["python", "src/calorie_bot.py"]
