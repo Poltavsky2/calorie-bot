@@ -255,10 +255,7 @@ def validate_food_data(data) -> dict:
     return validated
 
 async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None, is_custom_key: bool = False) -> dict:
-    if is_custom_key:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    else:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+    # URL is generated inside the loop per-key
     
     parts = [{"text": PROMPT}]
     if text:
@@ -285,32 +282,45 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
         }
     }
     
-    proxy_url = None if is_custom_key else os.environ.get("GEMINI_PROXY")
+    proxy_url = os.environ.get("GEMINI_PROXY")
     
-    async with httpx.AsyncClient(proxy=proxy_url) as client:
-        resp = await client.post(url, json=payload, timeout=45.0)
-        if resp.status_code != 200:
-            if resp.status_code == 503:
-                raise Exception("Сервер ИИ сейчас перегружен из-за высокого спроса (ошибка 503). Пожалуйста, подождите минуту и отправьте запрос снова.")
-            if resp.status_code == 429:
-                raise Exception("Превышен лимит запросов к ИИ. Пожалуйста, подождите пару минут.")
-            raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
+    keys = [k.strip() for k in api_key.split(",") if k.strip()]
+    if not keys:
+        keys = [""]
         
-        result = resp.json()
-        text_response = result['candidates'][0]['content']['parts'][0]['text']
-        try:
-            return parse_and_clean_json(text_response)
-        except json.JSONDecodeError as e:
-            raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
+    async with httpx.AsyncClient(proxy=proxy_url) as client:
+        last_error = None
+        for current_key in keys:
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+            try:
+                resp = await client.post(url, json=payload, timeout=45.0)
+                if resp.status_code == 200:
+                    result = resp.json()
+                    text_response = result['candidates'][0]['content']['parts'][0]['text']
+                    try:
+                        return parse_and_clean_json(text_response)
+                    except json.JSONDecodeError:
+                        raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
+                
+                if resp.status_code in [429, 503]:
+                    last_error = Exception(f"Ошибка {resp.status_code}: Сервер перегружен или лимит исчерпан.")
+                    continue # Try next key
+                    
+                raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
+            except httpx.TimeoutException:
+                last_error = Exception("Время ожидания ИИ истекло (таймаут).")
+                continue # Try next key
+                
+        # If all keys failed
+        if last_error:
+            raise last_error
+        raise Exception("Не удалось получить ответ от ИИ.")
 
 
 import hashlib
 
 async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bool = False) -> str:
-    if is_custom_key:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
-    else:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+    # URL generated in the loop
     
     system_prompt = """Ты — экспертный ИИ-нутрициолог. Твоя задача — составить подробный отчет по питанию пользователя за запрошенный период на основе предоставленных данных.
 Ты должен строго следовать этой структуре и использовать эти эмодзи:
@@ -363,17 +373,34 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
         }
     }
     
-    proxy_url = None if is_custom_key else os.environ.get("GEMINI_PROXY")
+    proxy_url = os.environ.get("GEMINI_PROXY")
+    keys = [k.strip() for k in api_key.split(",") if k.strip()]
+    if not keys:
+        keys = [""]
+        
     try:
         async with httpx.AsyncClient(proxy=proxy_url) as client:
-            res = await client.post(url, json=payload, timeout=90.0)
-            if res.status_code == 200:
-                data = res.json()
-                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
-            else:
-                return f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
-    except httpx.TimeoutException:
-        return "Время ожидания ИИ истекло (слишком большой объем данных). Попробуйте выбрать меньший период или повторить запрос."
+            last_error_text = None
+            for current_key in keys:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                try:
+                    res = await client.post(url, json=payload, timeout=90.0)
+                    if res.status_code == 200:
+                        data = res.json()
+                        return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
+                    
+                    if res.status_code in [429, 503]:
+                        last_error_text = f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
+                        continue # Try next key
+                        
+                    return f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
+                except httpx.TimeoutException:
+                    last_error_text = "Время ожидания ИИ истекло (слишком большой объем данных)."
+                    continue # Try next key
+                    
+            if last_error_text:
+                return last_error_text
+            return "Все запасные ключи не сработали. Попробуйте позже."
     except Exception as e:
         return f"Произошла непредвиденная ошибка при связи с ИИ: {str(e)}"
 
@@ -657,9 +684,8 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         await query.edit_message_text(
             "🔑 <b>Введите ваш API-ключ:</b>\n\n"
-            "• Ключи Gemini обычно начинаются с <code>AIzaSy</code>\n"
-            "• Ключи OpenAI обычно начинаются с <code>sk-</code>\n\n"
-            "Отправьте ключ ответным сообщением или введите /cancel для отмены.",
+            "Вы можете указать <b>несколько ключей через запятую</b>! Бот будет автоматически переключаться между ними, если один из ключей выдаст ошибку перегрузки (503/429).\n\n"
+            "Отправьте ключ(и) ответным сообщением или введите /cancel для отмены.",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
