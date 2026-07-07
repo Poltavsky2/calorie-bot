@@ -358,13 +358,18 @@ async def generate_report_gemini(api_key: str, data_text: str) -> str:
     }
     
     proxy_url = os.environ.get("GEMINI_PROXY")
-    async with httpx.AsyncClient(proxy=proxy_url) as client:
-        res = await client.post(url, json=payload, timeout=90.0)
-        if res.status_code == 200:
-            data = res.json()
-            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
-        else:
-            return "Не удалось связаться с ИИ. Попробуйте позже."
+    try:
+        async with httpx.AsyncClient(proxy=proxy_url) as client:
+            res = await client.post(url, json=payload, timeout=90.0)
+            if res.status_code == 200:
+                data = res.json()
+                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
+            else:
+                return "Не удалось связаться с ИИ. Сервер перегружен или недоступен. Попробуйте позже."
+    except httpx.TimeoutException:
+        return "Время ожидания ИИ истекло (слишком большой объем данных). Попробуйте выбрать меньший период или повторить запрос."
+    except Exception as e:
+        return f"Произошла непредвиденная ошибка при связи с ИИ: {str(e)}"
 
 async def analyze_food_openai(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None) -> dict:
     if voice_bytes:
