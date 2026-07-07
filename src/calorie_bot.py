@@ -254,7 +254,7 @@ def validate_food_data(data) -> dict:
     return validated
 
 async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None) -> dict:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
     
     parts = [{"text": PROMPT}]
     if text:
@@ -286,6 +286,10 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
     async with httpx.AsyncClient(proxy=proxy_url) as client:
         resp = await client.post(url, json=payload, timeout=45.0)
         if resp.status_code != 200:
+            if resp.status_code == 503:
+                raise Exception("Сервер ИИ сейчас перегружен из-за высокого спроса (ошибка 503). Пожалуйста, подождите минуту и отправьте запрос снова.")
+            if resp.status_code == 429:
+                raise Exception("Превышен лимит запросов к ИИ. Пожалуйста, подождите пару минут.")
             raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
         
         result = resp.json()
