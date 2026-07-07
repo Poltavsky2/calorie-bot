@@ -297,7 +297,10 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
         
         result = resp.json()
         text_response = result['candidates'][0]['content']['parts'][0]['text']
-        return parse_and_clean_json(text_response)
+        try:
+            return parse_and_clean_json(text_response)
+        except json.JSONDecodeError as e:
+            raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
 
 
 import hashlib
@@ -1121,11 +1124,13 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         
     except Exception as e:
         logger.error(f"Error processing food input: {e}")
+        keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
         await status_msg.edit_text(
             f"❌ <b>Произошла ошибка при анализе ИИ</b>\n\n"
             f"Детали ошибки: <code>{str(e)}</code>\n"
             f"Попробуйте еще раз или проверьте корректность API-ключа в /settings.",
-            parse_mode="HTML"
+            parse_mode="HTML",
+            reply_markup=InlineKeyboardMarkup(keyboard)
         )
 
 # ----------------- MAIN INITIALIZATION -----------------
