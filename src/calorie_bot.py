@@ -254,8 +254,11 @@ def validate_food_data(data) -> dict:
     
     return validated
 
-async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None) -> dict:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None, is_custom_key: bool = False) -> dict:
+    if is_custom_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    else:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     
     parts = [{"text": PROMPT}]
     if text:
@@ -282,7 +285,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
         }
     }
     
-    proxy_url = os.environ.get("GEMINI_PROXY")
+    proxy_url = None if is_custom_key else os.environ.get("GEMINI_PROXY")
     
     async with httpx.AsyncClient(proxy=proxy_url) as client:
         resp = await client.post(url, json=payload, timeout=45.0)
@@ -303,8 +306,11 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
 
 import hashlib
 
-async def generate_report_gemini(api_key: str, data_text: str) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bool = False) -> str:
+    if is_custom_key:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+    else:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     
     system_prompt = """Ты — экспертный ИИ-нутрициолог. Твоя задача — составить подробный отчет по питанию пользователя за запрошенный период на основе предоставленных данных.
 Ты должен строго следовать этой структуре и использовать эти эмодзи:
@@ -357,7 +363,7 @@ async def generate_report_gemini(api_key: str, data_text: str) -> str:
         }
     }
     
-    proxy_url = os.environ.get("GEMINI_PROXY")
+    proxy_url = None if is_custom_key else os.environ.get("GEMINI_PROXY")
     try:
         async with httpx.AsyncClient(proxy=proxy_url) as client:
             res = await client.post(url, json=payload, timeout=90.0)
@@ -1104,7 +1110,9 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
         if provider == "openai":
             raw_data = await analyze_food_openai(api_key, text=text, photo_bytes=photo_bytes, voice_bytes=voice_bytes)
         else:
-            raw_data = await analyze_food_gemini(api_key, text=text, photo_bytes=photo_bytes, voice_bytes=voice_bytes)
+            is_custom = bool(settings.get("api_key")) if settings else False
+            actual_key = api_key or system_gemini
+            raw_data = await analyze_food_gemini(actual_key, text=text, photo_bytes=photo_bytes, voice_bytes=voice_bytes, is_custom_key=is_custom)
             
         validated_data = validate_food_data(raw_data)
         
@@ -1165,7 +1173,8 @@ async def generate_report(query, context, period_action):
     
     # Load settings to get API key
     settings = await get_user_settings(user_id)
-    api_key = settings.get("api_key") or os.environ.get("GEMINI_API_KEY")
+    user_api_key = settings.get("api_key")
+    system_key = os.environ.get("GEMINI_API_KEY")
     
     # Fetch all entries
     all_entries = await get_diet_entries_firebase(user_id, limit=5000)
@@ -1221,7 +1230,10 @@ async def generate_report(query, context, period_action):
         report_text = cached_report.get('text')
     else:
         # Generate new
-        report_text = await generate_report_gemini(api_key, data_text)
+        if user_api_key:
+            report_text = await generate_report_gemini(user_api_key, data_text, is_custom_key=True)
+        else:
+            report_text = await generate_report_gemini(system_key, data_text, is_custom_key=False)
         # Save to cache
         context.user_data['reports_cache'][period] = {
             'hash': data_hash,
