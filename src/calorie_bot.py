@@ -12,12 +12,21 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from datetime import datetime, timedelta
 
+def safe_float(v):
+    try:
+        return float(v)
+    except (ValueError, TypeError):
+        return 0.0
+
 def safe_fromtimestamp(ts):
     if not isinstance(ts, (int, float)):
-        ts = 0
+        try:
+            ts = float(ts)
+        except (ValueError, TypeError):
+            ts = 0
     if ts > 10000000000:
         ts = ts / 1000
-    return safe_fromtimestamp(ts)
+    return datetime.fromtimestamp(ts)
 
 
 # --- FIX FOR HUGGING FACE IPV6 TIMEOUTS ---
@@ -564,11 +573,12 @@ async def show_history(query, context):
         for row in rows:
             ts = row.get("timestamp", 0)
             meal_type = row.get("mealType", "snack")
-            food_name = row.get("food_name", "Еда")
-            cals = row.get("calories", 0)
-            prot = row.get("protein", 0)
-            fat = row.get("fat", 0)
-            carbs = row.get("carbs", 0)
+            import html
+            food_name = html.escape(str(row.get("food_name", "Еда")))
+            cals = safe_float(row.get("calories", 0))
+            prot = safe_float(row.get("protein", 0))
+            fat = safe_float(row.get("fat", 0))
+            carbs = safe_float(row.get("carbs", 0))
             
             dt_str = safe_fromtimestamp(ts).strftime("%d.%m %H:%M")
             meal_emoji = "🍽"
