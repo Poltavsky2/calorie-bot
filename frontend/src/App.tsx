@@ -56,7 +56,8 @@ import {
   Pill,
   Soup,
   CookingPot,
-  Edit2
+  Edit2,
+  Scale
 } from 'lucide-react';
 import { 
   ResponsiveContainer, 
