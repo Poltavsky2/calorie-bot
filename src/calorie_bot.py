@@ -291,7 +291,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
     async with httpx.AsyncClient(proxy=proxy_url) as client:
         last_error = None
         for current_key in keys:
-            url = f"https://api.apiyi.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
             
             max_retries = 4
             for attempt in range(max_retries):
@@ -391,7 +391,7 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
         async with httpx.AsyncClient(proxy=proxy_url) as client:
             last_error_text = None
             for current_key in keys:
-                url = f"https://api.apiyi.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
                 
                 max_retries = 4
                 for attempt in range(max_retries):
