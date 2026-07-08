@@ -16,7 +16,7 @@ const getAI = () => {
   }
 
   if (!genAI || key !== currentKey) {
-    genAI = new GoogleGenAI({ apiKey: key });
+    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl: 'https://api.apiyi.com' } });
     currentKey = key;
   }
   
