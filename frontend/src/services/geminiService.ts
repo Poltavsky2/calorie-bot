@@ -16,7 +16,11 @@ const getAI = () => {
   }
 
   if (!genAI || key !== currentKey) {
-    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl: window.location.origin + '/google-proxy' } });
+    const baseUrl = key.startsWith('AQ') 
+      ? 'https://api.apiyi.com' 
+      : (window.location.origin + '/google-proxy');
+      
+    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl } });
     currentKey = key;
   }
   
