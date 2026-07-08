@@ -292,25 +292,34 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
         last_error = None
         for current_key in keys:
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
-            try:
-                resp = await client.post(url, json=payload, timeout=45.0)
-                if resp.status_code == 200:
-                    result = resp.json()
-                    text_response = result['candidates'][0]['content']['parts'][0]['text']
-                    try:
-                        return parse_and_clean_json(text_response)
-                    except json.JSONDecodeError:
-                        raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
-                
-                if resp.status_code in [429, 503]:
-                    last_error = Exception(f"Ошибка {resp.status_code}: Сервер перегружен или лимит исчерпан.")
-                    continue # Try next key
+            
+            max_retries = 4
+            for attempt in range(max_retries):
+                try:
+                    resp = await client.post(url, json=payload, timeout=45.0)
+                    if resp.status_code == 200:
+                        result = resp.json()
+                        text_response = result['candidates'][0]['content']['parts'][0]['text']
+                        try:
+                            return parse_and_clean_json(text_response)
+                        except json.JSONDecodeError:
+                            raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
                     
-                raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
-            except httpx.TimeoutException:
-                last_error = Exception("Время ожидания ИИ истекло (таймаут).")
-                continue # Try next key
-                
+                    if resp.status_code in [429, 503]:
+                        last_error = Exception(f"Ошибка {resp.status_code}: Сервер перегружен или лимит исчерпан.")
+                        if attempt < max_retries - 1:
+                            wait_time = (2 ** attempt) + random.uniform(0, 1)
+                            await asyncio.sleep(wait_time)
+                        continue # Retry same key
+                        
+                    raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
+                except httpx.TimeoutException:
+                    last_error = Exception("Время ожидания ИИ истекло (таймаут).")
+                    break # Timeout: don't retry same key, try next key
+                except Exception as e:
+                    last_error = e
+                    break
+                    
         # If all keys failed
         if last_error:
             raise last_error
@@ -383,20 +392,30 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
             last_error_text = None
             for current_key in keys:
                 url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
-                try:
-                    res = await client.post(url, json=payload, timeout=90.0)
-                    if res.status_code == 200:
-                        data = res.json()
-                        return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
-                    
-                    if res.status_code in [429, 503]:
-                        last_error_text = f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
-                        continue # Try next key
+                
+                max_retries = 4
+                for attempt in range(max_retries):
+                    try:
+                        res = await client.post(url, json=payload, timeout=90.0)
+                        if res.status_code == 200:
+                            data = res.json()
+                            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
                         
-                    return f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
-                except httpx.TimeoutException:
-                    last_error_text = "Время ожидания ИИ истекло (слишком большой объем данных)."
-                    continue # Try next key
+                        if res.status_code in [429, 503]:
+                            last_error_text = f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
+                            if attempt < max_retries - 1:
+                                wait_time = (2 ** attempt) + random.uniform(0, 1)
+                                await asyncio.sleep(wait_time)
+                            continue # Retry same key
+                            
+                        last_error_text = f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
+                        break # Try next key for other errors
+                    except httpx.TimeoutException:
+                        last_error_text = "Время ожидания ИИ истекло (слишком большой объем данных)."
+                        break # Try next key
+                    except Exception as e:
+                        last_error_text = f"Ошибка: {str(e)}"
+                        break
                     
             if last_error_text:
                 return last_error_text
