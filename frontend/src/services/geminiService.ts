@@ -16,7 +16,7 @@ const getAI = () => {
   }
 
   if (!genAI || key !== currentKey) {
-    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl: 'https://api.apiyi.com' } });
+    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl: window.location.origin + '/google-proxy' } });
     currentKey = key;
   }
   
@@ -411,7 +411,7 @@ ${goalsContext}
   } catch (error: any) {
     console.error("Long Term Analysis Error:", error);
     return {
-      numbers: "Не удалось получить данные о КБЖУ.",
+      numbers: `Ошибка: ${error?.message || String(error)}`,
       quality: "Не удалось проанализировать качество рациона.",
       hydration: "Информация о водном балансе недоступна.",
       timing: "Не удалось проанализировать время приемов пищи.",
