@@ -7,7 +7,7 @@ import json
 
 # Setup minimal call_ai_api
 async def call_ai_api(prompt: str, api_key: str, system_instruction: str = None) -> str:
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
+    url = f"https://api.apiyi.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
     headers = {"Content-Type": "application/json"}
     parts = []
     if system_instruction:
