@@ -1174,8 +1174,8 @@ const Dashboard: React.FC<{
     const totalP = entries.reduce((sum, d) => sum + d.protein, 0);
     const totalF = entries.reduce((sum, d) => sum + d.fat, 0);
     const totalC = entries.reduce((sum, d) => sum + d.carbs, 0);
-    const scoreEntries = entries.filter(d => (d.items?.length || 0) > 0);
-    const avgScore = scoreEntries.length > 0 
+    const scoreEntries = entries.filter(d => typeof d.health_score === 'number' && d.mealType !== 'water' && d.mealType !== 'steps');
+    const avgScore = scoreEntries.length > 0
       ? Math.round(scoreEntries.reduce((sum, d) => sum + (d.health_score || 0), 0) / scoreEntries.length)
       : 0;
 
