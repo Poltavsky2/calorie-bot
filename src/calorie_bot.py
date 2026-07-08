@@ -1243,22 +1243,35 @@ async def generate_report(query, context, period_action):
         return
         
     # Create simple data text and calculate hash
-    data_lines = []
-    total_cal = 0
-    total_water = 0
-    total_steps = 0
+    from collections import defaultdict
+    daily_stats = defaultdict(lambda: {'cal': 0, 'prot': 0, 'fat': 0, 'carbs': 0, 'water': 0, 'steps': 0, 'foods': []})
+    
     for e in entries:
-        dt = safe_fromtimestamp(e.get('timestamp', 0)).strftime("%Y-%m-%d %H:%M")
+        dt_obj = safe_fromtimestamp(e.get('timestamp', 0))
+        date_str = dt_obj.strftime("%Y-%m-%d")
+        
         if e.get("type") == "water" or e.get("water_ml", 0) > 0:
-            data_lines.append(f"{dt} | Вода: {e.get('water_ml', 0)} мл")
-            total_water += e.get("water_ml", 0)
+            daily_stats[date_str]['water'] += e.get("water_ml", 0)
         elif e.get("type") == "steps" or e.get("steps_count", 0) > 0:
-            data_lines.append(f"{dt} | Шаги: {e.get('steps_count', 0)}")
-            total_steps += e.get("steps_count", 0)
+            daily_stats[date_str]['steps'] += e.get("steps_count", 0)
         else:
             cals = e.get("calories", 0)
-            data_lines.append(f"{dt} | {e.get('mealType', 'snack')} | {e.get('food_name', 'Еда')} | {cals} ккал | Белки: {e.get('protein', 0)}, Жиры: {e.get('fat', 0)}, Угл: {e.get('carbs', 0)}")
-            total_cal += cals
+            daily_stats[date_str]['cal'] += cals
+            daily_stats[date_str]['prot'] += e.get('protein', 0)
+            daily_stats[date_str]['fat'] += e.get('fat', 0)
+            daily_stats[date_str]['carbs'] += e.get('carbs', 0)
+            
+            food_name = e.get('food_name', 'Еда')
+            if food_name not in daily_stats[date_str]['foods']:
+                daily_stats[date_str]['foods'].append(food_name)
+                
+    data_lines = []
+    for date_str, stats in sorted(daily_stats.items()):
+        foods_str = ", ".join(stats['foods'][:8])
+        if len(stats['foods']) > 8:
+            foods_str += "..."
+        line = f"[{date_str}] Ккал: {stats['cal']:.0f} (Б:{stats['prot']:.0f} Ж:{stats['fat']:.0f} У:{stats['carbs']:.0f}) | Вода: {stats['water']}мл | Шаги: {stats['steps']} | Еда: {foods_str}"
+        data_lines.append(line)
             
     data_text = "\n".join(data_lines)
     
