@@ -960,7 +960,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await query.edit_message_text(
                 "✏️ <b>Введите время приема пищи вручную:</b>\n"
-                "Формат: <code>ЧЧ:ММ</code> (например, <code>14:30</code>):",
+                "Формат: <code>ЧЧ:ММ</code> (например, <code>14:30</code>) или с датой <code>ДД.ММ ЧЧ:ММ</code> (например, <code>10.07 14:30</code>):",
                 parse_mode="HTML",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
@@ -1129,15 +1129,37 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
         
     elif state == "AWAITING_TIME":
-        # Check time format HH:MM
-        if not re.match(r"^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$", text):
+        # Check time format HH:MM or DD.MM. HH:MM
+        text_clean = text.strip()
+        match = re.match(r"^(?:(\d{1,2}\.\d{1,2}(?:\.\d{2,4})?)[, \.]*)?([0-1]?[0-9]|2[0-3]):([0-5][0-9])$", text_clean)
+        if not match:
             keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
-            await update.message.reply_html("⚠️ Неверный формат времени. Введите в формате ЧЧ:ММ (например, 14:30):", reply_markup=InlineKeyboardMarkup(keyboard))
+            await update.message.reply_html("⚠️ Неверный формат. Введите в формате <code>ЧЧ:ММ</code> (например, <code>14:30</code>) или с датой <code>ДД.ММ ЧЧ:ММ</code> (например, <code>10.07 14:30</code>):", reply_markup=InlineKeyboardMarkup(keyboard))
             return
             
-        h, m = map(int, text.split(":"))
+        date_str, h_str, m_str = match.groups()
+        h, m = int(h_str), int(m_str)
         now = datetime.now()
-        dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        
+        if date_str:
+            date_str = date_str.rstrip('.')
+            try:
+                parts = date_str.split('.')
+                if len(parts) == 3:
+                    y = int(parts[2])
+                    if y < 100: y += 2000
+                    parsed_date = datetime.strptime(f"{parts[0]}.{parts[1]}.{y}", "%d.%m.%Y")
+                    dt = now.replace(year=parsed_date.year, month=parsed_date.month, day=parsed_date.day, hour=h, minute=m, second=0, microsecond=0)
+                else:
+                    parsed_date = datetime.strptime(date_str, "%d.%m")
+                    dt = now.replace(month=parsed_date.month, day=parsed_date.day, hour=h, minute=m, second=0, microsecond=0)
+            except ValueError:
+                keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
+                await update.message.reply_html("⚠️ Неверный формат даты. Используйте <code>ДД.ММ</code> или <code>ДД.ММ.ГГГГ</code>:", reply_markup=InlineKeyboardMarkup(keyboard))
+                return
+        else:
+            dt = now.replace(hour=h, minute=m, second=0, microsecond=0)
+            
         context.user_data['diary_flow']['timestamp'] = int(dt.timestamp() * 1000)
         
         # Trigger weight prompt
