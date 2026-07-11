@@ -168,7 +168,7 @@ def parse_and_clean_json(text: str) -> dict:
             text = text[start:end+1]
             
     text = text.strip()
-    return json.loads(text)
+    return json.loads(text, strict=False)
 
 def validate_food_data(data) -> dict:
     if isinstance(data, list):
@@ -358,7 +358,8 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                             text_response = result['candidates'][0]['content']['parts'][0]['text']
                         try:
                             return parse_and_clean_json(text_response)
-                        except json.JSONDecodeError:
+                        except json.JSONDecodeError as e:
+                            logging.error(f"JSONDecodeError: {e}\nRaw response: {text_response}")
                             raise Exception("Сбой форматирования ответа нейросети. Пожалуйста, отправьте запрос еще раз.")
                     
                     if resp.status_code in [429, 503]:

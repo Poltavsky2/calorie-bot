@@ -202,7 +202,7 @@ def clean_and_parse_json(text: str) -> dict:
     if start != -1 and end != -1:
         clean_text = clean_text[start:end+1]
         
-    return json.loads(clean_text)
+    return json.loads(clean_text, strict=False)
 
 def format_amount(amount: float, currency: str = "RUB") -> str:
     symbol = CURRENCY_SYMBOLS.get(currency, currency)
@@ -1765,7 +1765,7 @@ def format_ai_response(response_text: str) -> str:
                 lines = lines[:-1]
             clean_text = "\n".join(lines).strip()
             
-        data = json.loads(clean_text)
+        data = json.loads(clean_text, strict=False)
         
         # Unwrap nested single-key dictionaries recursively
         while isinstance(data, dict) and len(data) == 1:
