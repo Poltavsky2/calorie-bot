@@ -288,9 +288,10 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
     if not keys:
         keys = [""]
         
-    async with httpx.AsyncClient(proxy=proxy_url) as client:
-        last_error = None
-        for current_key in keys:
+    last_error = None
+    for current_key in keys:
+        use_proxy = proxy_url if not current_key.startswith("gsk_") else None
+        async with httpx.AsyncClient(proxy=use_proxy) as client:
             if current_key.startswith("gsk_"):
                 url = "https://api.groq.com/openai/v1/chat/completions"
                 headers = {
@@ -441,9 +442,10 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
         keys = [""]
         
     try:
-        async with httpx.AsyncClient(proxy=proxy_url) as client:
-            last_error_text = None
-            for current_key in keys:
+        last_error_text = None
+        for current_key in keys:
+            use_proxy = proxy_url if not current_key.startswith("gsk_") else None
+            async with httpx.AsyncClient(proxy=use_proxy) as client:
                 if current_key.startswith("gsk_"):
                     url = "https://api.groq.com/openai/v1/chat/completions"
                     headers = {
