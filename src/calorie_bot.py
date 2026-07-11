@@ -6,6 +6,7 @@ import asyncio
 import base64
 import re
 import io
+import random
 from firebase_client import save_diet_entry_firebase, get_diet_entries_firebase, get_user_settings_firebase, save_user_settings_firebase
 import threading
 import socket
