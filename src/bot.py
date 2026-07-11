@@ -313,7 +313,7 @@ async def call_ai_api(prompt: str, api_key: str, system_instruction: str = None,
                 
                 if file_bytes and mime_type:
                     if mime_type.startswith("image/"):
-                        model = "meta-llama/llama-4-scout-17b-16e-instruct"
+                        model = "llama-3.2-90b-vision-preview"
                         base64_img = base64.b64encode(file_bytes).decode("utf-8")
                         messages.append({
                             "role": "user",
@@ -1154,7 +1154,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
     elif data == "set_key":
         context.user_data["bot_state"] = "WAITING_API_KEY"
-        await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini или OpenAI) следующим текстовым сообщением:")
+        await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini, OpenAI или Groq) следующим текстовым сообщением:")
         
     elif data == "set_url":
         context.user_data["bot_state"] = "WAITING_FIREBASE_URL"
