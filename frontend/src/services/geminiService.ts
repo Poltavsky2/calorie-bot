@@ -4,6 +4,70 @@ import { Product, UserBiologicalData, UserGoals, DietEntry } from "../types";
 let genAI: GoogleGenAI | null = null;
 let currentKey: string | null = null;
 
+class GroqWrapper {
+  constructor(private apiKey: string) {}
+  
+  models = {
+    generateContent: async (args: any) => {
+      let model = "llama-3.3-70b-versatile";
+      const messages = [];
+      
+      const contents = args.contents || [];
+      for (const item of contents) {
+        if (item.role === "system") {
+           messages.push({ role: "system", content: item.parts.map((p: any) => p.text).join("") });
+        } else {
+           let contentArr: any = [];
+           let hasImage = false;
+           for (const part of item.parts) {
+             if (part.text) contentArr.push({ type: "text", text: part.text });
+             if (part.inlineData) {
+               hasImage = true;
+               model = "meta-llama/llama-4-scout-17b-16e-instruct";
+               contentArr.push({ type: "image_url", image_url: { url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}` }});
+             }
+           }
+           if (contentArr.length === 1 && contentArr[0].type === "text") {
+             messages.push({ role: "user", content: contentArr[0].text });
+           } else {
+             messages.push({ role: "user", content: contentArr });
+           }
+        }
+      }
+      
+      const payload: any = {
+        model,
+        messages
+      };
+      
+      if (args.config?.responseSchema) {
+        payload.response_format = { type: "json_object" };
+      }
+      
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
+      });
+      
+      if (!response.ok) {
+        const err = await response.text();
+        throw new Error(`Groq API Error: ${response.status} ${err}`);
+      }
+      
+      const data = await response.json();
+      const textResponse = data.choices[0].message.content;
+      
+      return {
+        text: textResponse
+      };
+    }
+  };
+}
+
 const getAI = () => {
   const env = (import.meta as any).env || {};
   const key = 
@@ -12,12 +76,16 @@ const getAI = () => {
     env.VITE_GEMINI_API_KEY;
   
   if (!key) {
-    throw new Error("GEMINI_API_KEY не задан.");
+    throw new Error("API ключ не задан.");
   }
 
   if (!genAI || key !== currentKey) {
-    const baseUrl = window.location.origin + '/google-proxy';
-    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl } });
+    if (key.startsWith("gsk_")) {
+      genAI = new GroqWrapper(key) as any;
+    } else {
+      const baseUrl = window.location.origin + '/google-proxy';
+      genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl } });
+    }
     currentKey = key;
   }
   

@@ -299,6 +299,52 @@ async def call_ai_api(prompt: str, api_key: str, system_instruction: str = None,
                     resp = await client.post(url, headers=headers, json=payload, timeout=30.0)
                     resp.raise_for_status()
                     return resp.json()["choices"][0]["message"]["content"]
+            elif api_key.startswith("gsk_"):
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                messages = []
+                if system_instruction:
+                    messages.append({"role": "system", "content": system_instruction})
+                
+                model = "llama-3.3-70b-versatile"
+                
+                if file_bytes and mime_type:
+                    if mime_type.startswith("image/"):
+                        model = "meta-llama/llama-4-scout-17b-16e-instruct"
+                        base64_img = base64.b64encode(file_bytes).decode("utf-8")
+                        messages.append({
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": prompt},
+                                {"type": "image_url", "image_url": {"url": f"data:{mime_type};base64,{base64_img}"}}
+                            ]
+                        })
+                    elif mime_type.startswith("audio/"):
+                        whisper_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+                        whisper_headers = {"Authorization": f"Bearer {api_key}"}
+                        files = {"file": ("voice.ogg", file_bytes, mime_type)}
+                        data = {"model": "whisper-large-v3"}
+                        async with httpx.AsyncClient() as client:
+                            w_resp = await client.post(whisper_url, headers=whisper_headers, files=files, data=data, timeout=30.0)
+                            w_resp.raise_for_status()
+                            transcript = w_resp.json().get("text", "")
+                        messages.append({"role": "user", "content": f"{prompt}\n\n[Транскрипт аудио]: {transcript}"})
+                else:
+                    messages.append({"role": "user", "content": prompt})
+                
+                payload = {
+                    "model": model,
+                    "messages": messages
+                }
+                if response_json:
+                    payload["response_format"] = {"type": "json_object"}
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, headers=headers, json=payload, timeout=30.0)
+                    resp.raise_for_status()
+                    return resp.json()["choices"][0]["message"]["content"]
             else:
                 # Gemini API
                 if api_key.startswith("AQ"):

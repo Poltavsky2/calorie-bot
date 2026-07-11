@@ -291,18 +291,68 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
     async with httpx.AsyncClient(proxy=proxy_url) as client:
         last_error = None
         for current_key in keys:
-            if current_key.startswith("AQ"):
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+            if current_key.startswith("gsk_"):
+                url = "https://api.groq.com/openai/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {current_key}",
+                    "Content-Type": "application/json"
+                }
+                messages = []
+                model = "llama-3.3-70b-versatile"
+                
+                if photo_bytes:
+                    model = "meta-llama/llama-4-scout-17b-16e-instruct"
+                    base64_img = base64.b64encode(photo_bytes).decode("utf-8")
+                    content_arr = [{"type": "text", "text": PROMPT}]
+                    if text:
+                        content_arr.append({"type": "text", "text": text})
+                    content_arr.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}})
+                    messages.append({"role": "user", "content": content_arr})
+                elif voice_bytes:
+                    whisper_url = "https://api.groq.com/openai/v1/audio/transcriptions"
+                    whisper_headers = {"Authorization": f"Bearer {current_key}"}
+                    files = {"file": ("voice.ogg", voice_bytes, "audio/ogg")}
+                    w_data = {"model": "whisper-large-v3"}
+                    try:
+                        w_resp = await client.post(whisper_url, headers=whisper_headers, files=files, data=w_data, timeout=30.0)
+                        w_resp.raise_for_status()
+                        transcript = w_resp.json().get("text", "")
+                    except Exception as e:
+                        last_error = Exception(f"Ошибка распознавания аудио: {e}")
+                        break
+                    full_text = f"{PROMPT}\n\n{text if text else ''}\n[Транскрипт аудио]: {transcript}"
+                    messages.append({"role": "user", "content": full_text})
+                else:
+                    messages.append({"role": "user", "content": f"{PROMPT}\n\n{text}"})
+                
+                payload = {
+                    "model": model,
+                    "messages": messages,
+                    "response_format": {"type": "json_object"}
+                }
             else:
-                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
+                if current_key.startswith("AQ"):
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                else:
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
+                headers = {"Content-Type": "application/json"}
+                payload = {
+                    "contents": [{"parts": parts}],
+                    "generationConfig": {
+                        "responseMimeType": "application/json"
+                    }
+                }
             
             max_retries = 4
             for attempt in range(max_retries):
                 try:
-                    resp = await client.post(url, json=payload, timeout=45.0)
+                    resp = await client.post(url, headers=headers, json=payload, timeout=45.0)
                     if resp.status_code == 200:
                         result = resp.json()
-                        text_response = result['candidates'][0]['content']['parts'][0]['text']
+                        if current_key.startswith("gsk_"):
+                            text_response = result['choices'][0]['message']['content']
+                        else:
+                            text_response = result['candidates'][0]['content']['parts'][0]['text']
                         try:
                             return parse_and_clean_json(text_response)
                         except json.JSONDecodeError:
@@ -315,7 +365,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                             await asyncio.sleep(wait_time)
                         continue # Retry same key
                         
-                    raise Exception(f"Gemini API Error (status {resp.status_code}): {resp.text}")
+                    raise Exception(f"API Error (status {resp.status_code}): {resp.text}")
                 except httpx.TimeoutException:
                     last_error = Exception("Время ожидания ИИ истекло (таймаут).")
                     break # Timeout: don't retry same key, try next key
@@ -394,18 +444,43 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
         async with httpx.AsyncClient(proxy=proxy_url) as client:
             last_error_text = None
             for current_key in keys:
-                if current_key.startswith("AQ"):
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                if current_key.startswith("gsk_"):
+                    url = "https://api.groq.com/openai/v1/chat/completions"
+                    headers = {
+                        "Authorization": f"Bearer {current_key}",
+                        "Content-Type": "application/json"
+                    }
+                    payload = {
+                        "model": "llama-3.3-70b-versatile",
+                        "messages": [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": "Вот данные пользователя за период:\n" + data_text}
+                        ]
+                    }
                 else:
-                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
+                    if current_key.startswith("AQ"):
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                    else:
+                        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
+                    
+                    headers = {"Content-Type": "application/json"}
+                    payload = {
+                        "contents": [{"parts": parts}],
+                        "generationConfig": {
+                            "temperature": 0.7
+                        }
+                    }
                 
                 max_retries = 4
                 for attempt in range(max_retries):
                     try:
-                        res = await client.post(url, json=payload, timeout=90.0)
+                        res = await client.post(url, headers=headers, json=payload, timeout=90.0)
                         if res.status_code == 200:
                             data = res.json()
-                            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
+                            if current_key.startswith("gsk_"):
+                                return data.get("choices", [{}])[0].get("message", {}).get("content", "Ошибка генерации отчета.")
+                            else:
+                                return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Ошибка генерации отчета.")
                         
                         if res.status_code in [429, 503]:
                             last_error_text = f"Не удалось связаться с ИИ. Сервер вернул ошибку {res.status_code}: {res.text}"
