@@ -16,7 +16,11 @@ const getAI = () => {
   }
 
   if (!genAI || key !== currentKey) {
-    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl: window.location.origin + '/google-proxy' } });
+    const baseUrl = key.startsWith('AQ') 
+      ? 'https://api.apiyi.com' 
+      : (window.location.origin + '/google-proxy');
+      
+    genAI = new GoogleGenAI({ apiKey: key, httpOptions: { baseUrl } });
     currentKey = key;
   }
   
@@ -57,7 +61,8 @@ const isRateLimitError = (error: any) => {
 export const analyzeProduct = async (input: { image?: string; text?: string }, knownProducts: Product[] = []): Promise<AnalysisResult> => {
   try {
     const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     
     let contents: any;
     const knownProductsStr = knownProducts.length > 0 
@@ -141,8 +146,8 @@ export const analyzeProduct = async (input: { image?: string; text?: string }, k
 
 export const getDailyAdvice = async (diet: DietEntry[], goals?: UserGoals): Promise<string> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash"; 
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     const dietContext = diet.length === 0 ? "Рацион пока пуст." : diet.map(entry => `- ${entry.mealType}: ${entry.description || (entry.items && entry.items[0]?.productName) || "Прием пищи"}`).join("\n");
     const goalsContext = goals ? `Цели: ${goals.calories}ккал, Б:${goals.protein}, Ж:${goals.fat}, У:${goals.carbs}` : "";
 
@@ -170,8 +175,8 @@ export interface MealAuditResult {
 
 export const analyzeMealDescription = async (description: string, knownProducts: Product[]): Promise<MealAuditResult> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     const prompt = `Проанализируй прием пищи: "${description}". 
 База известных продуктов: ${JSON.stringify(knownProducts.map(p => ({ id: p.id, name: p.name, nutrition: p.nutrition, health_score: p.health_score })))}. 
 Задания:
@@ -217,8 +222,8 @@ export const analyzeMealDescription = async (description: string, knownProducts:
 
 export const analyzeFoodImage = async (base64Image: string, knownProducts: Product[]): Promise<MealAuditResult> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     const base64Data = base64Image.split(',')[1] || base64Image;
     const prompt = `Определи еду на фото. 
 База известных продуктов: ${JSON.stringify(knownProducts.map(p => ({ id: p.id, name: p.name, nutrition: p.nutrition, health_score: p.health_score })))}. 
@@ -262,8 +267,8 @@ export const analyzeFoodImage = async (base64Image: string, knownProducts: Produ
 
 export const calculatePersonalGoals = async (bio: UserBiologicalData): Promise<UserGoals> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     const prompt = `Рассчитай КБЖУ, норму воды (мл) и рекомендованное количество шагов. Данные: ${JSON.stringify(bio)}. Верни JSON {calories, protein, fat, carbs, water, steps}.`;
 
     const response = await ai.models.generateContent({
@@ -330,8 +335,8 @@ export const calculatePersonalGoals = async (bio: UserBiologicalData): Promise<U
 
 export const refineGoal = async (bio: UserBiologicalData): Promise<string> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     const prompt = `Проанализируй данные пользователя (возраст: ${bio.age}, рост: ${bio.height}, вес: ${bio.weight}) и его цель: "${bio.goalDescription || "не указана"}". 
 Сформулируй краткую, конкретную и мотивирующую цель на русском языке (1 предложение). 
 Если описание цели пустое, сформулируй её на основе параметров тела (например, поддержание формы или здоровый образ жизни). 
@@ -354,8 +359,8 @@ export interface LongTermAnalysis {
 
 export const analyzeLongTermDiet = async (diet: DietEntry[], periodName: string, goals?: UserGoals): Promise<LongTermAnalysis> => {
   try {
-    const ai = getAI();
-    const model = "gemini-3.5-flash";
+    const key = localStorage.getItem('user_gemini_api_key') || '';
+    const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
     
     const dietSummary = diet.map(d => ({
       date: new Date(d.timestamp).toLocaleDateString(),
@@ -428,6 +433,9 @@ function getPrompt() {
   - product: отдельные продукты (молоко, яблоки, творог, курица).
   - simple_dish: простые блюда из 2-3 ингредиентов (бутерброд, омлет).
   - complex_dish: сложные многокомпонентные блюда.
+
+  ВНИМАНИЕ - НУТРИЕНТЫ:
+  Значения в объекте nutrition (calories, protein, fat, carbs) ДОЛЖНЫ БЫТЬ УКАЗАНЫ СТРОГО НА 100 ГРАММ продукта или блюда! Не указывай значения для всей порции, только в расчете на 100 г!
 
   HEALTH_IMPACT (ЗНАЧЕНИЕ ДЛЯ JSON ПОЛЯ health_impact):
   - "low": ПОЛЕЗНО/БЕЗОПАСНО (ЗЕЛЕНАЯ точка 🟢). Используй для натуральных продуктов, белков, витаминов (Примеры: молоко, мясо, овощи, орехи).
