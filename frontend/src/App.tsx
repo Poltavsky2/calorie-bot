@@ -1066,8 +1066,7 @@ const Dashboard: React.FC<{
       const entries = period.days === 0 
         ? diet 
         : diet.filter(d => d.timestamp >= Date.now() - (period.days * 24 * 60 * 60 * 1000));
-        
-      const analysis = await analyzeLongTermDiet(entries, period.title, user.goals);
+      const analysis = await analyzeLongTermDiet(entries, period.title, user);
       
       setAnalysisModal(prev => ({ 
         ...prev, 

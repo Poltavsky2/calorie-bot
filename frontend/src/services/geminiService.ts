@@ -425,7 +425,7 @@ export interface LongTermAnalysis {
   how_to_use: string;
 }
 
-export const analyzeLongTermDiet = async (diet: DietEntry[], periodName: string, goals?: UserGoals): Promise<LongTermAnalysis> => {
+export const analyzeLongTermDiet = async (diet: DietEntry[], periodName: string, user?: any): Promise<LongTermAnalysis> => {
   try {
     const key = localStorage.getItem('user_gemini_api_key') || '';
     const model = key.startsWith('AQ') ? "gemini-3.5-flash" : "gemini-1.5-flash";
@@ -439,24 +439,68 @@ export const analyzeLongTermDiet = async (diet: DietEntry[], periodName: string,
       nutrition: { c: d.calories, p: d.protein, f: d.fat, ch: d.carbs }
     }));
 
-    const goalsContext = goals ? `Цели: ${goals.calories}ккал, Б:${goals.protein}, Ж:${goals.fat}, У:${goals.carbs}` : "";
+    const totalCals = diet.reduce((s, d) => s + (d.calories || 0), 0);
+    const totalProtein = diet.reduce((s, d) => s + (d.protein || 0), 0);
+    const totalFat = diet.reduce((s, d) => s + (d.fat || 0), 0);
+    const totalCarbs = diet.reduce((s, d) => s + (d.carbs || 0), 0);
+    const totalWater = diet.reduce((s, d) => s + Number(d.water_ml || 0), 0);
+    const totalSteps = diet.reduce((s, d) => s + Number(d.steps_count || 0), 0);
 
-    const prompt = `Ты — эксперт-нутрициолог. Проанализируй рацион пользователя за период: ${periodName}.
+    let days = 1;
+    let noun = "период";
+    let nounPre = "этот период";
+    let nounGen = "периода";
+    
+    const pLower = periodName.toLowerCase();
+    if (pLower.includes("день") || pLower.includes("дневной")) {
+      days = 1; noun = "день"; nounPre = "этот день"; nounGen = "дня";
+    } else if (pLower.includes("месяц") || pLower.includes("месячный")) {
+      days = 30; noun = "месяц"; nounPre = "этот месяц"; nounGen = "месяца";
+    } else if (pLower.includes("год") || pLower.includes("годовой")) {
+      days = 365; noun = "год"; nounPre = "этот год"; nounGen = "года";
+    } else if (pLower.includes("все время")) {
+      days = Math.max(1, Math.ceil((Date.now() - (user?.registeredAt || Date.now())) / (1000 * 60 * 60 * 24)));
+      noun = "весь период"; nounPre = "все время"; nounGen = "всего времени";
+    }
+
+    const avgCals = Math.round(totalCals / days);
+    const avgProtein = Math.round(totalProtein / days);
+    const avgFat = Math.round(totalFat / days);
+    const avgCarbs = Math.round(totalCarbs / days);
+    const avgWater = Math.round(totalWater / days);
+    const avgSteps = Math.round(totalSteps / days);
+
+    const goals = user?.goals;
+    const waterTarget = user?.bio?.waterTarget || 2000;
+    const stepsTarget = user?.bio?.stepsTarget || 10000;
+
+    const goalsContext = goals ? `ЦЕЛИ ПОЛЬЗОВАТЕЛЯ (В ДЕНЬ): ${goals.calories} ккал, Б:${goals.protein}г, Ж:${goals.fat}г, У:${goals.carbs}г. Вода: ${waterTarget} мл, Шаги: ${stepsTarget} шт.` : "";
+
+    const aggregates = `ФАКТИЧЕСКАЯ СТАТИСТИКА ПОЛЬЗОВАТЕЛЯ:
+- Всего записей за ${nounPre}: ${diet.length}
+- В СРЕДНЕМ В ДЕНЬ за ${nounPre}: ${avgCals} ккал, Б:${avgProtein}г, Ж:${avgFat}г, У:${avgCarbs}г. Вода: ${avgWater} мл, Шаги: ${avgSteps} шт.
+- ИТОГО за ${nounPre} (сумма): ${totalCals} ккал, Б:${totalProtein}г, Ж:${totalFat}г, У:${totalCarbs}г. Вода: ${totalWater} мл, Шаги: ${totalSteps} шт.`;
+
+    const prompt = `Ты — эксперт-нутрициолог. Проанализируй данные пользователя за ${nounPre} (${periodName}).
 ${goalsContext}
-Данные рациона (в сжатом виде): ${JSON.stringify(dietSummary.slice(-100))}
+${aggregates}
+
+Данные рациона (последние записи для примеров еды): ${JSON.stringify(dietSummary.slice(-50))}
 
 Подготовь отчет на РУССКОМ языке. Пиши ПРОСТО и ПОНЯТНО, без сложных медицинских терминов, как будто объясняешь другу.
-Используй живые примеры из результата (например, названия продуктов из рациона).
+ОБЯЗАТЕЛЬНО используй слово "${noun}" (а не "день") там, где это уместно, так как отчет формируется за ${nounPre}.
+Сравни ФАКТИЧЕСКИЕ средние данные пользователя с его ежедневными ЦЕЛЯМИ. Обязательно учти потребление воды и шаги!
 
-ВАЖНО: Если данных рациона мало (например, 1-2 записи), ОБЯЗАТЕЛЬНО проведи полноценный анализ того, что есть! Ты можешь мягко упомянуть во вступлении, что для более точной картины желательно добавлять больше данных, но ни в коем случае не отказывайся от анализа. Подробно разбери каждый добавленный продукт или блюдо.
+ВАЖНО: Если данных рациона мало, ОБЯЗАТЕЛЬНО проведи полноценный анализ того, что есть! Ты можешь мягко упомянуть во вступлении, что для более точной картины желательно добавлять больше данных, но ни в коем случае не отказывайся от анализа.
 
 Структура отчета (JSON):
-1. intro: Вводный текст про день/период. Оцени калорийность, баланс и общую активность. Дай характеристику дню (например, "сладко-хлебный день" или "отличный белковый день").
-2. what_was_good: Раздел "✅ Что было хорошо". Опиши плюсы: белковая основа, овощи, вода, шаги, полезные привычки.
-3. what_to_watch: Раздел "⚠️ На что аккуратно смотреть". Опиши минусы или риски: сладости, перебор жиров/углеводов, недостаток шагов.
-4. how_to_use: Раздел "📌 Как использовать этот день". Дай краткие выводы и правила для подобных дней в будущем (например, "оставь 1 сладость вместо 3", "увеличь шаги").
+1. intro: Вводный текст про ${nounPre}. Оцени среднюю калорийность, баланс БЖУ, воду и шаги относительно плана. Дай характеристику (например, "отличный белковый ${noun}" или "малоактивный ${noun}").
+2. what_was_good: Раздел "✅ Что было хорошо". Опиши плюсы (например, хорошая норма шагов, вода, полезные привычки, белковая база).
+3. what_to_watch: Раздел "⚠️ На что аккуратно смотреть". Опиши минусы или риски (например, недобор воды/шагов, избыток жиров/сахара).
+4. how_to_use: Раздел "📌 Как использовать опыт этого ${nounGen}". Дай краткие выводы и правила на будущее.
 
-Текст внутри полей может содержать символы переноса строки (\n) для форматирования списков (например, "- Белок: ...\n- Овощи: ..."). Верни JSON объект со строковыми полями: intro, what_was_good, what_to_watch, how_to_use.`;
+Верни JSON объект со строковыми полями: intro, what_was_good, what_to_watch, how_to_use.`;
+
 
     const ai = getAI();
     const response = await ai.models.generateContent({
