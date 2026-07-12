@@ -11,7 +11,8 @@ from firebase_client import save_diet_entry_firebase, get_diet_entries_firebase,
 import threading
 import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+MSK = timezone(timedelta(hours=3))
 
 def safe_float(v):
     try:
@@ -27,7 +28,7 @@ def safe_fromtimestamp(ts):
             ts = 0
     if ts > 10000000000:
         ts = ts / 1000
-    return datetime.fromtimestamp(ts)
+    return datetime.fromtimestamp(ts, tz=MSK)
 
 
 # --- FIX FOR HUGGING FACE IPV6 TIMEOUTS ---
@@ -826,7 +827,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_diet_entry(
                 user_id=user_id,
                 meal_type="water",
-                timestamp=int(datetime.now().timestamp() * 1000),
+                timestamp=int(datetime.now(MSK).timestamp() * 1000),
                 food_name="Питьевая вода",
                 utility=last_analysis["verdict"],
                 description=f"Потребление воды: {water_ml} мл",
@@ -861,7 +862,7 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await save_diet_entry(
                 user_id=user_id,
                 meal_type="steps",
-                timestamp=int(datetime.now().timestamp() * 1000),
+                timestamp=int(datetime.now(MSK).timestamp() * 1000),
                 food_name="Шаги / Активность",
                 utility=last_analysis["verdict"],
                 description=f"Активность: {steps_count} шагов",
@@ -944,13 +945,13 @@ async def callback_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         time_type = data.replace("time_", "")
         
         if time_type == "now":
-            context.user_data['diary_flow']['timestamp'] = int(datetime.now().timestamp() * 1000)
+            context.user_data['diary_flow']['timestamp'] = int(datetime.now(MSK).timestamp() * 1000)
             await ask_weight_step(query, context)
         elif time_type == "30m":
-            context.user_data['diary_flow']['timestamp'] = int((datetime.now() - timedelta(minutes=30)).timestamp() * 1000)
+            context.user_data['diary_flow']['timestamp'] = int((datetime.now(MSK) - timedelta(minutes=30)).timestamp() * 1000)
             await ask_weight_step(query, context)
         elif time_type == "1h":
-            context.user_data['diary_flow']['timestamp'] = int((datetime.now() - timedelta(hours=1)).timestamp() * 1000)
+            context.user_data['diary_flow']['timestamp'] = int((datetime.now(MSK) - timedelta(hours=1)).timestamp() * 1000)
             await ask_weight_step(query, context)
         elif time_type == "manual":
             context.user_data['state'] = "AWAITING_TIME"
@@ -1139,7 +1140,7 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
         date_str, h_str, m_str = match.groups()
         h, m = int(h_str), int(m_str)
-        now = datetime.now()
+        now = datetime.now(MSK)
         
         if date_str:
             date_str = date_str.rstrip('.')
@@ -1334,7 +1335,7 @@ async def generate_report(query, context, period_action):
     all_entries = await get_diet_entries_firebase(user_id, limit=5000)
     
     # Filter by period
-    now = datetime.now()
+    now = datetime.now(MSK)
     if period == 'day':
         start_ts = now.replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
     elif period == 'month':
