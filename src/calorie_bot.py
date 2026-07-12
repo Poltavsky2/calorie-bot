@@ -613,23 +613,40 @@ async def clarify_food_gemini(api_key: str, last_analysis: dict, text: str = Non
                 }
                 # Groq doesn't support audio here easily in the same prompt, but fallback is ok.
             else:
-                if is_custom_key:
+                if current_key.startswith("AQ"):
+                    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={current_key}"
+                elif is_custom_key:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key={current_key}"
                 else:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
                 headers = {"Content-Type": "application/json"}
             
-            try:
-                res = await client.post(url, headers=headers, json=payload, timeout=90.0)
-                if res.status_code == 200:
-                    data = res.json()
-                    if current_key.startswith("gsk_"):
-                        return data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
-                    else:
-                        return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
-            except:
-                continue
-    return "{}"
+            max_retries = 3
+            last_err = None
+            for attempt in range(max_retries):
+                try:
+                    res = await client.post(url, headers=headers, json=payload, timeout=90.0)
+                    if res.status_code == 200:
+                        data = res.json()
+                        if current_key.startswith("gsk_"):
+                            return data.get("choices", [{}])[0].get("message", {}).get("content", "{}")
+                        else:
+                            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "{}")
+                    if res.status_code in [429, 503]:
+                        last_err = Exception(f"Ошибка {res.status_code}")
+                        import asyncio
+                        await asyncio.sleep(2)
+                        continue
+                    last_err = Exception(f"HTTP {res.status_code}: {res.text[:200]}")
+                    break
+                except Exception as e:
+                    last_err = e
+                    import asyncio
+                    await asyncio.sleep(1)
+                    
+            if last_err:
+                raise last_err
+    raise Exception("Не удалось получить ответ от нейросети (все ключи исчерпаны).")
 
 async def clarify_food_openai(api_key: str, last_analysis: dict, text: str = None, voice_bytes: bytes = None) -> dict:
     if voice_bytes:
