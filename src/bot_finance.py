@@ -1156,9 +1156,34 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["bot_state"] = "WAITING_API_KEY"
         await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini, OpenAI или Groq) следующим текстовым сообщением:")
         
-    elif data == "set_url":
-        context.user_data["bot_state"] = "WAITING_FIREBASE_URL"
-        await query.message.reply_text("🔗 Отправьте URL вашей базы Firebase RTDB (начинается с http/https) или напишите 'default' для возврата на локальную SQLite:")
+    elif data == "export_backup":
+        user_data = get_user_data_by_id(user_id)
+        backup_json = json.dumps(user_data, ensure_ascii=False, indent=2)
+        backup_bytes = backup_json.encode('utf-8')
+        date_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        
+        await context.bot.send_document(
+            chat_id=user_id,
+            document=backup_bytes,
+            filename=f"finance_backup_{date_str}.json",
+            caption="📥 Вот полная резервная копия ваших данных.\nЕсли вы хотите восстановить данные, просто перешлите этот файл мне обратно!"
+        )
+        await query.answer("Бэкап успешно отправлен!")
+        return
+        
+    elif data.startswith("restore_backup:"):
+        choice = data.split(":")[1]
+        if choice == "yes":
+            pending = context.user_data.get("pending_backup")
+            if pending:
+                save_user_data_by_id(user_id, pending)
+                context.user_data.pop("pending_backup", None)
+                await query.edit_message_text("✅ Данные успешно загружены! Используйте /menu для просмотра.")
+            else:
+                await query.edit_message_text("❌ Файл устарел или сессия истекла. Отправьте файл заново.")
+        else:
+            context.user_data.pop("pending_backup", None)
+            await query.edit_message_text("❌ Восстановление отменено.")
         
     elif data == "reset_confirm":
         keyboard = InlineKeyboardMarkup([
@@ -1430,14 +1455,12 @@ async def show_settings_menu(message, context, edit_query=None):
     currency = settings.get("currency", "RUB")
     ai_status = "🟢 Включен" if settings.get("ai_enabled", True) else "🔴 Выключен"
     api_key_masked = "•" * 8 if settings.get("api_key") else "не настроен ❌"
-    firebase_url_masked = settings.get("firebase_url") or "локальная SQLite 📦"
-    
     text = (
         "⚙️ <b>Настройки профиля:</b>\n\n"
         f"💱 <b>Валюта:</b> {currency}\n"
         f"🤖 <b>AI-анализ:</b> {ai_status}\n"
         f"🔑 <b>API-ключ:</b> <code>{api_key_masked}</code>\n"
-        f"🔗 <b>База данных:</b> <code>{html.escape(firebase_url_masked)}</code>"
+        f"🛡️ <b>Бэкап:</b> Вручную через Telegram"
     )
     
     keyboard = InlineKeyboardMarkup([
@@ -1451,8 +1474,8 @@ async def show_settings_menu(message, context, edit_query=None):
             InlineKeyboardButton("🔑 Ввести ключ", callback_data="set_key")
         ],
         [
-            InlineKeyboardButton("🔗 Firebase URL", callback_data="set_url"),
-            InlineKeyboardButton("📥 Экспорт в CSV", callback_data="export_csv")
+            InlineKeyboardButton("📥 Сделать бэкап", callback_data="export_backup"),
+            InlineKeyboardButton("📊 Экспорт в CSV", callback_data="export_csv")
         ],
         [
             InlineKeyboardButton("⚠️ Сбросить все данные", callback_data="reset_confirm")
@@ -2011,7 +2034,37 @@ async def export_data_csv(message, user_id):
 
 # ----------------- MAIN BOT START -----------------
 
+
+async def handle_document(update, context):
+    doc = update.message.document
+    if not doc.file_name.endswith('.json'):
+        return
+    
+    file = await context.bot.get_file(doc.file_id)
+    file_bytes = await file.download_as_bytearray()
+    
+    try:
+        data = json.loads(file_bytes.decode('utf-8'))
+        if "transactions" in data and "accounts" in data:
+            context.user_data["pending_backup"] = data
+            from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("✅ Да, восстановить", callback_data="restore_backup:yes")],
+                [InlineKeyboardButton("❌ Отмена", callback_data="restore_backup:no")]
+            ])
+            await update.message.reply_text(
+                "⚠️ Вы загрузили резервную копию базы данных.\n\n"
+                "Вы действительно хотите <b>заменить все текущие транзакции и балансы</b> на данные из этого файла?",
+                reply_markup=keyboard,
+                parse_mode="HTML"
+            )
+        else:
+            await update.message.reply_text("❌ Этот JSON-файл не содержит финансовых данных бота.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Ошибка при чтении файла: {e}")
+
 def main():
+
     token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not token:
         logger.error("Error: TELEGRAM_BOT_TOKEN environment variable not set.")
@@ -2027,7 +2080,10 @@ def main():
     
     application.add_handler(MessageHandler(filters.VOICE, handle_voice))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+
     
     logger.info("Bot started and listening for messages...")
     
