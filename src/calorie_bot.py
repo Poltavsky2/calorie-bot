@@ -1256,7 +1256,7 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text.startswith("sk-"):
             provider = "openai"
             
-        set_user_api_key(user_id, text, provider)
+        await set_user_api_key(user_id, text, provider)
         context.user_data['state'] = None
         keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
         await update.message.reply_html(
