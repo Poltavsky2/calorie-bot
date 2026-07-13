@@ -345,6 +345,37 @@ async def call_ai_api(prompt: str, api_key: str, system_instruction: str = None,
                     resp = await client.post(url, headers=headers, json=payload, timeout=30.0)
                     resp.raise_for_status()
                     return resp.json()["choices"][0]["message"]["content"]
+
+            elif api_key.startswith("csk-"):
+                url = "https://api.cerebras.ai/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+                messages = []
+                if system_instruction:
+                    messages.append({"role": "system", "content": system_instruction})
+                
+                model = "llama3.1-70b"
+                
+                if file_bytes and mime_type:
+                    if mime_type.startswith("image/"):
+                        messages.append({"role": "user", "content": f"{prompt}\n[Изображение пропущено: Cerebras API пока не поддерживает анализ картинок]"})
+                    elif mime_type.startswith("audio/"):
+                        messages.append({"role": "user", "content": f"{prompt}\n[Голосовое сообщение пропущено: Cerebras API пока не поддерживает транскрибацию аудио]"})
+                else:
+                    messages.append({"role": "user", "content": prompt})
+                
+                payload = {
+                    "model": model,
+                    "messages": messages
+                }
+                if response_json:
+                    payload["response_format"] = {"type": "json_object"}
+                async with httpx.AsyncClient() as client:
+                    resp = await client.post(url, headers=headers, json=payload, timeout=30.0)
+                    resp.raise_for_status()
+                    return resp.json()["choices"][0]["message"]["content"]
             else:
                 if api_key.startswith("AQ"):
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key={api_key}"
@@ -1154,7 +1185,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         
     elif data == "set_key":
         context.user_data["bot_state"] = "WAITING_API_KEY"
-        await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini, OpenAI или Groq) следующим текстовым сообщением:")
+        await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini, OpenAI, Groq или Cerebras) следующим текстовым сообщением:")
         
     elif data == "export_backup":
         user_data = get_user_data_by_id(user_id)
