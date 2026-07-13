@@ -379,14 +379,14 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                         await asyncio.sleep(2)
                         continue
                     break # Timeout: try next key
-                except Exception as e:
-                    last_error = e
-                    break
-                    
-        # If all keys failed
-        if last_error:
-            raise last_error
-        raise Exception("Не удалось получить ответ от ИИ.")
+        except Exception as e:
+            last_error = e
+            logging.error(f"Error processing Gemini analysis: {e}")
+
+    # If all keys failed
+    if last_error:
+        raise last_error
+    raise Exception("Не удалось получить ответ от ИИ.")
 
 
 import hashlib
@@ -509,9 +509,9 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
                         last_error_text = f"Ошибка: {str(e)}"
                         break
                     
-            if last_error_text:
-                return last_error_text
-            return "Все запасные ключи не сработали. Попробуйте позже."
+        if last_error_text:
+            return last_error_text
+        return "Все запасные ключи не сработали. Попробуйте позже."
     except Exception as e:
         return f"Произошла непредвиденная ошибка при связи с ИИ: {str(e)}"
 
@@ -647,8 +647,8 @@ async def clarify_food_gemini(api_key: str, last_analysis: dict, text: str = Non
                     import asyncio
                     await asyncio.sleep(1)
                     
-            if last_err:
-                raise last_err
+    if last_err:
+        raise last_err
     raise Exception("Не удалось получить ответ от нейросети (все ключи исчерпаны).")
 
 async def clarify_food_openai(api_key: str, last_analysis: dict, text: str = None, voice_bytes: bytes = None) -> dict:
