@@ -1252,11 +1252,12 @@ async def user_text_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if state == "AWAITING_API_KEY":
         # Validate / save key
+        text_clean = text.replace('\n', '').replace('\r', '').strip()
         provider = "gemini"
-        if text.startswith("sk-"):
+        if text_clean.startswith("sk-"):
             provider = "openai"
             
-        await set_user_api_key(user_id, text, provider)
+        await set_user_api_key(user_id, text_clean, provider)
         context.user_data['state'] = None
         keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
         await update.message.reply_html(
@@ -1455,6 +1456,21 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
                              photo_bytes: bytes = None, voice_bytes: bytes = None):
     user_id = update.effective_user.id
     
+    # Auto-detect if user just pasted an API key in chat
+    if text:
+        text_clean = text.replace('\n', '').replace('\r', '').strip()
+        if text_clean.startswith("gsk_") or text_clean.startswith("sk-") or text_clean.startswith("AIzaSy"):
+            provider = "openai" if text_clean.startswith("sk-") else "gemini"
+            await set_user_api_key(user_id, text_clean, provider)
+            keyboard = [[InlineKeyboardButton("🔙 Главное меню", callback_data="menu_main")]]
+            await update.message.reply_html(
+                f"✅ <b>API-ключ автоматически сохранен!</b>\n"
+                f"Провайдер: <b>{'GROQ/GEMINI' if provider == 'gemini' else 'OPENAI'}</b>.\n"
+                f"Теперь вы можете отправить фото, голосовое или текст для анализа.",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            return
+
     # Retrieve user settings
     settings = await get_user_settings(user_id)
     api_key = settings.get("api_key") if settings else None
