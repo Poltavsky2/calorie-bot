@@ -1,6 +1,4 @@
-925: async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
-1159: elif data == "set_url":
-1189: elif data == "export_csv":
-1454: InlineKeyboardButton("🔗 Firebase URL", callback_data="set_url"),
-1455: InlineKeyboardButton("📥 Экспорт в CSV", callback_data="export_csv")
-2014: def main():
+1182: elif data == "export_backup":
+1500: InlineKeyboardButton("📥 Сделать бэкап", callback_data="export_backup"),
+2061: async def handle_document(update, context):
+2108: application.add_handler(MessageHandler(filters.Document.ALL, handle_document))

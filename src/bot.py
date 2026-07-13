@@ -1179,33 +1179,20 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         context.user_data["bot_state"] = "WAITING_API_KEY"
         await query.message.reply_text("🔑 Отправьте ваш API-ключ (Gemini, OpenAI, Groq или Cerebras) следующим текстовым сообщением:")
         
-    elif data == "export_backup":
-        user_data = get_user_data_by_id(user_id)
-        backup_json = json.dumps(user_data, ensure_ascii=False, indent=2)
-        backup_bytes = backup_json.encode('utf-8')
-        date_str = datetime.now().strftime("%Y-%m-%d_%H-%M")
-        
-        await context.bot.send_document(
-            chat_id=user_id,
-            document=backup_bytes,
-            filename=f"finance_backup_{date_str}.json",
-            caption="📥 Вот полная резервная копия ваших данных.\nЕсли вы хотите восстановить данные, просто перешлите этот файл мне обратно!"
-        )
-        await query.answer("Бэкап успешно отправлен!")
-        return
-        
-    elif data.startswith("restore_backup:"):
+    elif data.startswith("restore_csv:"):
         choice = data.split(":")[1]
         if choice == "yes":
-            pending = context.user_data.get("pending_backup")
-            if pending:
-                save_user_data_by_id(user_id, pending)
-                context.user_data.pop("pending_backup", None)
-                await query.edit_message_text("✅ Данные успешно загружены! Используйте /menu для просмотра.")
+            pending = context.user_data.get("pending_csv_transactions")
+            if pending is not None:
+                user_data = get_user_data_by_id(user_id)
+                user_data["transactions"] = pending
+                save_user_data_by_id(user_id, user_data)
+                context.user_data.pop("pending_csv_transactions", None)
+                await query.edit_message_text("✅ Транзакции успешно восстановлены из CSV! Используйте /menu для просмотра.")
             else:
                 await query.edit_message_text("❌ Файл устарел или сессия истекла. Отправьте файл заново.")
         else:
-            context.user_data.pop("pending_backup", None)
+            context.user_data.pop("pending_csv_transactions", None)
             await query.edit_message_text("❌ Восстановление отменено.")
         
     elif data == "reset_confirm":
@@ -1479,11 +1466,11 @@ async def show_settings_menu(message, context, edit_query=None):
     ai_status = "🟢 Включен" if settings.get("ai_enabled", True) else "🔴 Выключен"
     api_key_masked = "•" * 8 if settings.get("api_key") else "не настроен ❌"
     text = (
-        "⚙️ <b>Настройки профиля:</b>\n\n"
-        f"💱 <b>Валюта:</b> {currency}\n"
-        f"🤖 <b>AI-анализ:</b> {ai_status}\n"
-        f"🔑 <b>API-ключ:</b> <code>{api_key_masked}</code>\n"
-        f"🛡️ <b>Бэкап:</b> Вручную через Telegram"
+        "⚙️ <b>Настройки профиля:</b>\\n\\n"
+        f"💱 <b>Валюта:</b> {currency}\\n"
+        f"🤖 <b>AI-анализ:</b> {ai_status}\\n"
+        f"🔑 <b>API-ключ:</b> <code>{api_key_masked}</code>\\n"
+        f"🛡️ <b>Восстановление:</b> Загрузите CSV файл"
     )
     
     keyboard = InlineKeyboardMarkup([
@@ -1497,7 +1484,6 @@ async def show_settings_menu(message, context, edit_query=None):
             InlineKeyboardButton("🔑 Ввести ключ", callback_data="set_key")
         ],
         [
-            InlineKeyboardButton("📥 Сделать бэкап", callback_data="export_backup"),
             InlineKeyboardButton("📊 Экспорт в CSV", callback_data="export_csv")
         ],
         [
@@ -2060,31 +2046,51 @@ async def export_data_csv(message, user_id):
 
 async def handle_document(update, context):
     doc = update.message.document
-    if not doc.file_name.endswith('.json'):
+    if not doc.file_name.endswith('.csv'):
         return
     
     file = await context.bot.get_file(doc.file_id)
     file_bytes = await file.download_as_bytearray()
     
     try:
-        data = json.loads(file_bytes.decode('utf-8'))
-        if "transactions" in data and "accounts" in data:
-            context.user_data["pending_backup"] = data
-            from telegram import InlineKeyboardMarkup, InlineKeyboardButton
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("✅ Да, восстановить", callback_data="restore_backup:yes")],
-                [InlineKeyboardButton("❌ Отмена", callback_data="restore_backup:no")]
-            ])
-            await update.message.reply_text(
-                "⚠️ Вы загрузили резервную копию базы данных.\n\n"
-                "Вы действительно хотите <b>заменить все текущие транзакции и балансы</b> на данные из этого файла?",
-                reply_markup=keyboard,
-                parse_mode="HTML"
-            )
-        else:
-            await update.message.reply_text("❌ Этот JSON-файл не содержит финансовых данных бота.")
+        content = file_bytes.decode('utf-8')
+        import csv
+        from io import StringIO
+        reader = csv.reader(StringIO(content))
+        header = next(reader, None)
+        
+        # Check if header is valid for our CSV format
+        if not header or len(header) < 6 or header[0] != "ID" or header[1] != "Дата":
+            await update.message.reply_text("❌ Этот CSV-файл имеет неверный формат или поврежден.")
+            return
+            
+        transactions = []
+        for row in reader:
+            if len(row) < 6: continue
+            tx = {
+                "id": int(row[0]) if row[0].isdigit() else int(datetime.now().timestamp()),
+                "date": row[1],
+                "type": "income" if row[2] == "Доход" else "expense",
+                "category": row[3],
+                "amount": float(row[4]) if row[4] else 0.0,
+                "description": row[5]
+            }
+            transactions.append(tx)
+            
+        context.user_data["pending_csv_transactions"] = transactions
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup([
+            [InlineKeyboardButton("✅ Да, восстановить", callback_data="restore_csv:yes")],
+            [InlineKeyboardButton("❌ Отмена", callback_data="restore_csv:no")]
+        ])
+        await update.message.reply_text(
+            f"⚠️ Вы загрузили CSV-файл ({len(transactions)} операций).\\n\\n"
+            "Вы действительно хотите <b>заменить все текущие транзакции</b> на данные из этого файла?",
+            reply_markup=keyboard,
+            parse_mode="HTML"
+        )
     except Exception as e:
-        await update.message.reply_text(f"❌ Ошибка при чтении файла: {e}")
+        await update.message.reply_text(f"❌ Ошибка при чтении файла CSV: {e}")
 
 def main():
 
