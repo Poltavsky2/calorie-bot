@@ -829,7 +829,7 @@ async def process_transaction_input(message, context, input_text=None, file_byte
             "amount": 0.0,
             "type": "expense",
             "category": "Другое",
-            "description": "Ошибка парсинга",
+            "description": "Не найдено сумм (или фото не поддерживается)",
             "confidence": 0.0
         }]
         
