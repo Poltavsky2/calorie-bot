@@ -379,9 +379,9 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                         await asyncio.sleep(2)
                         continue
                     break # Timeout: try next key
-        except Exception as e:
-            last_error = e
-            logging.error(f"Error processing Gemini analysis: {e}")
+                except Exception as e:
+                    last_error = e
+                    break
 
     # If all keys failed
     if last_error:
