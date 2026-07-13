@@ -213,11 +213,26 @@ def validate_food_data(data) -> dict:
     validated["category"] = category
     
     nutrition = data.get("nutrition") or {}
+    p = float(nutrition.get("protein") or 0)
+    f = float(nutrition.get("fat") or 0)
+    c = float(nutrition.get("carbs") or 0)
+    
+    # Enforce physical reality: macros cannot exceed 100g
+    total_macros = p + f + c
+    if total_macros > 100:
+        scale = 95.0 / total_macros  # Scale down to 95g to leave room for water/minerals
+        p *= scale
+        f *= scale
+        c *= scale
+
+    # Enforce mathematical reality for calories
+    calculated_cals = (p * 4) + (c * 4) + (f * 9)
+
     validated["nutrition"] = {
-        "calories": float(nutrition.get("calories") or 0),
-        "protein": float(nutrition.get("protein") or 0),
-        "fat": float(nutrition.get("fat") or 0),
-        "carbs": float(nutrition.get("carbs") or 0)
+        "calories": calculated_cals,
+        "protein": p,
+        "fat": f,
+        "carbs": c
     }
     
     try:
