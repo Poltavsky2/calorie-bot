@@ -305,7 +305,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                 model = "llama-3.3-70b-versatile"
                 
                 if photo_bytes:
-                    model = "meta-llama/llama-4-scout-17b-16e-instruct"
+                    model = "llama-3.2-90b-vision-preview"
                     base64_img = base64.b64encode(photo_bytes).decode("utf-8")
                     content_arr = [{"type": "text", "text": PROMPT}]
                     if text:

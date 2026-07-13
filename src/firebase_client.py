@@ -115,7 +115,7 @@ async def get_diet_entries_firebase(user_id: int, limit: int = 10) -> list:
 
 async def get_user_settings_firebase(user_id: int) -> dict:
     user_key = encode_telegram_id(user_id)
-    url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/{DB_ID}/documents/users/{user_key}?key={API_KEY}"
+    url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/{DB_ID}/documents/users/{user_key}/diet/bot_settings?key={API_KEY}"
     try:
         async with httpx.AsyncClient() as client:
             res = await client.get(url, timeout=10.0)
@@ -130,7 +130,7 @@ async def get_user_settings_firebase(user_id: int) -> dict:
 
 async def save_user_settings_firebase(user_id: int, settings: dict):
     user_key = encode_telegram_id(user_id)
-    url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/{DB_ID}/documents/users/{user_key}?key={API_KEY}"
+    url = f"https://firestore.googleapis.com/v1/projects/{PROJECT_ID}/databases/{DB_ID}/documents/users/{user_key}/diet/bot_settings?key={API_KEY}"
     # Merge with existing fields if document exists
     payload = {
         "fields": {
