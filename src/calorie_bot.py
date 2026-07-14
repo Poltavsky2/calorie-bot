@@ -296,7 +296,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
             }
         })
         
-    payload = {
+    gemini_payload = {
         "contents": [{"parts": parts}],
         "generationConfig": {
             "responseMimeType": "application/json"
@@ -347,7 +347,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                 else:
                     messages.append({"role": "user", "content": f"{PROMPT}\n\n{text}"})
                 
-                payload = {
+                req_payload = {
                     "model": model,
                     "messages": messages,
                     "response_format": {"type": "json_object"}
@@ -358,6 +358,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
                 else:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
                 headers = {"Content-Type": "application/json"}
+                req_payload = gemini_payload
                 payload = {
                     "contents": [{"parts": parts}],
                     "generationConfig": {
@@ -368,7 +369,7 @@ async def analyze_food_gemini(api_key: str, text: str = None, photo_bytes: bytes
             max_retries = 4
             for attempt in range(max_retries):
                 try:
-                    resp = await client.post(url, headers=headers, json=payload, timeout=60.0)
+                    resp = await client.post(url, headers=headers, json=req_payload, timeout=60.0)
                     if resp.status_code == 200:
                         result = resp.json()
                         if current_key.startswith("gsk_"):
@@ -609,7 +610,7 @@ async def clarify_food_gemini(api_key: str, last_analysis: dict, text: str = Non
             }
         })
         
-    payload = {
+    gemini_payload = {
         "contents": [{"parts": parts}],
         "generationConfig": {
             "responseMimeType": "application/json"
@@ -641,6 +642,7 @@ async def clarify_food_gemini(api_key: str, last_analysis: dict, text: str = Non
                 else:
                     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={current_key}"
                 headers = {"Content-Type": "application/json"}
+                payload = gemini_payload
             
             max_retries = 3
             last_err = None
