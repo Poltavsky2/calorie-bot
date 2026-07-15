@@ -771,7 +771,7 @@ def format_food_message_html(data: dict) -> str:
                 emoji = "🟡"
             else:
                 emoji = "🔴"
-            risk_info = f" (Риск: {ing['risk_level']}/10)" if ing['risk_level'] > 0 else ""
+            risk_info = f" (Риск: {risk}/10)"
             desc = f" — {ing['description']}" if ing['description'] else ""
             msg += f"  {emoji} {ing['name']}{risk_info}{desc}\n"
         msg += "\n"
