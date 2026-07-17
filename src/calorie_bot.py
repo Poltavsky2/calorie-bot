@@ -1563,7 +1563,10 @@ async def process_food_input(update: Update, context: ContextTypes.DEFAULT_TYPE,
             raw_data = await analyze_food_openai(api_key, text=text, photo_bytes=photo_bytes, voice_bytes=voice_bytes)
         else:
             is_custom = bool(settings.get("api_key")) if settings else False
-            actual_key = api_key or system_gemini
+            if is_custom and system_gemini and system_gemini != "YOUR_GEMINI_API_KEY_HERE":
+                actual_key = f"{api_key},{system_gemini}"
+            else:
+                actual_key = api_key or system_gemini
             raw_data = await analyze_food_gemini(actual_key, text=text, photo_bytes=photo_bytes, voice_bytes=voice_bytes, is_custom_key=is_custom)
             
         validated_data = validate_food_data(raw_data)
