@@ -571,7 +571,11 @@ async def generate_report_gemini(api_key: str, data_text: str, is_custom_key: bo
         return f"Произошла непредвиденная ошибка при связи с ИИ: {str(e)}"
 
 async def analyze_food_openai(api_key: str, text: str = None, photo_bytes: bytes = None, voice_bytes: bytes = None) -> dict:
+    is_openrouter = api_key.startswith("sk-or-")
+    
     if voice_bytes:
+        if is_openrouter:
+            raise Exception("OpenRouter (NVIDIA Nemotron) не поддерживает распознавание голосовых сообщений. Пожалуйста, отправьте текст или фото.")
         # Transcribe audio using Whisper first
         transcribe_url = "https://api.openai.com/v1/audio/transcriptions"
         headers = {"Authorization": f"Bearer {api_key}"}
@@ -586,7 +590,13 @@ async def analyze_food_openai(api_key: str, text: str = None, photo_bytes: bytes
                 raise Exception(f"OpenAI Whisper Error (status {resp.status_code}): {resp.text}")
             text = resp.json().get("text", "")
             
-    url = "https://api.openai.com/v1/chat/completions"
+    if is_openrouter:
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        model_name = "nvidia/nemotron-nano-12b-v2-vl:free"
+    else:
+        url = "https://api.openai.com/v1/chat/completions"
+        model_name = "gpt-4o-mini"
+        
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
@@ -605,7 +615,7 @@ async def analyze_food_openai(api_key: str, text: str = None, photo_bytes: bytes
         })
         
     payload = {
-        "model": "gpt-4o-mini",
+        "model": model_name,
         "messages": [{"role": "user", "content": content_list}],
         "response_format": {"type": "json_object"},
         "temperature": 0.2
